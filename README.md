@@ -86,6 +86,20 @@ docker compose -f ../docker-compose.yml -f ../docker-compose.dev.yml up --build
 
 L'image Nginx sert les fichiers statiques et proxy `/api/` vers le backend Django.
 
+## Déploiement Netlify
+
+```bash
+npm ci && npm run build
+```
+
+Configuration Netlify (dashboard) :
+- **Root directory** : `qa_recipe_converter_frontend`
+- **Build command** : `npm ci && npm run build`
+- **Publish directory** : `dist`
+- **Variable d'environnement** : `VITE_API_URL=https://<backend>.onrender.com/api`
+
+Le fichier `netlify.toml` à la racine reprend ces réglages (redirections SPA incluses via `public/_redirects`). En production, l'API est appelée en cross-origin (Netlify → Render) avec cookies de session : le backend Django doit autoriser l'origine Netlify dans `CORS_ALLOWED_ORIGINS` et `CSRF_TRUSTED_ORIGINS`.
+
 ## Email
 
 En développement, les emails (bienvenue, invitation) sont envoyés via **Mailpit** :
