@@ -3,9 +3,7 @@
   publish = "dist"
 
 [build.environment]
-  # Défini ici seulement si tu veux versionner l'URL ; sinon, privilégie une
-  # variable d'environnement "VITE_API_URL" dans le dashboard Netlify.
-  VITE_API_URL = "https://<your-backend>.onrender.com/api"
+  VITE_API_URL = "https://qa-recipe-converter.onrender.com/api"
 
 [[redirects]]
   from = "/*"
