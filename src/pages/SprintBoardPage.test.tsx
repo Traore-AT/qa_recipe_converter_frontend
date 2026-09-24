@@ -17,6 +17,7 @@ const { mockTeamsApi, mockNavigate } = vi.hoisted(() => ({
     createSprint: vi.fn(),
     createAssignments: vi.fn(),
     updateUseCaseStatus: vi.fn(),
+    getUseCaseDetail: vi.fn(),
   },
   mockNavigate: vi.fn(),
 }));
@@ -40,7 +41,7 @@ const mockBoard = {
   sprint: mockSprints.results[0],
   columns: {
     'À tester': [
-      { id: 'a1', use_case: 'uc1', use_case_order: 1, use_case_id_str: 'TC001', use_case_desc: 'Login test', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'À tester' },
+      { id: 'a1', use_case: 'uc1', use_case_order: 1, use_case_id_str: 'TC001', use_case_desc: 'Login test', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'À tester', jira_ticket: 'QA-001', jira_url: 'https://jira.example/browse/QA-001' },
     ],
     'En cours': [
       { id: 'a2', use_case: 'uc2', use_case_order: 2, use_case_id_str: 'TC002', use_case_desc: 'Logout test', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'En cours' },
@@ -176,6 +177,27 @@ describe('SprintBoardPage', () => {
       const sprint1Elements = screen.getAllByText('Sprint 1');
       expect(sprint1Elements.length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText(/33\.3/)).toBeInTheDocument();
+    });
+  });
+
+  it('opens the ticket popup immediately on card click with board data', async () => {
+    mockTeamsApi.getUseCaseDetail.mockResolvedValue({
+      assignment: mockBoard.columns['À tester'][0],
+      use_case: { id: 'uc1', project: 'p1', order: 1, use_case_text: 'TC001', description: 'Login test', preconditions: 'user registered', steps: '1. open app', expected_results: 'home page', observed_results: '', is_automated: false, jira_ticket: 'QA-001' },
+      screenshots: [],
+      comments: [{ id: 'c1', author: { id: 1, full_name: 'Lead QA' }, content: 'Test rapide', created_at: '2026-06-01' }],
+    });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await waitFor(() => screen.getByText('CAS-001'));
+    await user.click(screen.getByText('CAS-001'));
+    await waitFor(() => {
+      expect(screen.getByText(/UC#1 — Détails/)).toBeInTheDocument();
+      expect(screen.getByText('Assigné à :')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('QA-001')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByText('user registered')).toBeInTheDocument();
     });
   });
 });

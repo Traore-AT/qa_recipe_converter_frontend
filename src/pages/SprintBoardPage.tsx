@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { teamsApi } from '../api/teams';
@@ -7,7 +7,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import type { UseCaseDetail, UseCaseScreenshot, ProjectMember } from '../types';
+import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, ProjectMember } from '../types';
 import { queryKeys } from '../lib/queryKeys';
 
 const STATUS_COLUMNS = ['À tester', 'En cours', 'Passé', 'Échoué', 'Bloqué'];
@@ -83,11 +83,16 @@ export default function SprintBoardPage() {
     enabled: !!slug && !!projectSlug && showAssignModal,
   });
 
-  const { data: ucDetail } = useQuery({
+  const { data: ucDetail, isLoading: ucDetailLoading } = useQuery({
     queryKey: queryKeys.ucDetail(slug, projectSlug, detailAssignmentId),
     queryFn: () => teamsApi.getUseCaseDetail(slug!, projectSlug!, detailAssignmentId!),
     enabled: !!slug && !!projectSlug && !!detailAssignmentId,
   });
+
+  const selectedAssignment = useMemo(() => {
+    if (!detailAssignmentId) return undefined;
+    return Object.values(board?.columns ?? {}).flat().find(a => a.id === detailAssignmentId);
+  }, [board, detailAssignmentId]);
 
   const createSprintMutation = useMutation({
     mutationFn: () => teamsApi.createSprint(slug!, projectSlug!, newSprint),
@@ -166,50 +171,6 @@ export default function SprintBoardPage() {
       return el ? JSON.parse(el.textContent || '{}') : null;
     } catch { return null; }
   })();
-
-  // Keep the page in place while any modal is open. This also prevents an
-  // ancestor's scroll/transform context from affecting the detail modal.
-  useEffect(() => {
-    const isModalOpen = showCreateModal || showAssignModal || !!detailAssignmentId;
-    if (!isModalOpen) return;
-
-    const scrollY = window.scrollY;
-    const body = document.body;
-    const previous = {
-      position: body.style.position,
-      top: body.style.top,
-      left: body.style.left,
-      right: body.style.right,
-      width: body.style.width,
-      overflow: body.style.overflow,
-    };
-
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.left = '0';
-    body.style.right = '0';
-    body.style.width = '100%';
-    body.style.overflow = 'hidden';
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      if (detailAssignmentId) setDetailAssignmentId(null);
-      else if (showAssignModal) setShowAssignModal(false);
-      else if (showCreateModal) setShowCreateModal(false);
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      body.style.position = previous.position;
-      body.style.top = previous.top;
-      body.style.left = previous.left;
-      body.style.right = previous.right;
-      body.style.width = previous.width;
-      body.style.overflow = previous.overflow;
-      window.scrollTo(0, scrollY);
-    };
-  }, [showCreateModal, showAssignModal, detailAssignmentId]);
 
   return (
     <PageLayout>
@@ -478,9 +439,11 @@ return (
         </div>
       </Modal>
 
-      {detailAssignmentId && ucDetail && (
+      {detailAssignmentId && selectedAssignment && (
         <UseCaseDetailModal
+          assignment={selectedAssignment}
           detail={ucDetail}
+          isLoading={ucDetailLoading}
           onClose={() => setDetailAssignmentId(null)}
           onUploadScreenshot={(file, caption) =>
             uploadScreenshotMutation.mutate({ assignmentId: detailAssignmentId, file, caption })
@@ -489,10 +452,10 @@ return (
             deleteScreenshotMutation.mutate({ assignmentId: detailAssignmentId, screenshotId })
           }
           onAddComment={(content) =>
-            commentMutation.mutate({ ucId: ucDetail.use_case.id, content })
+            commentMutation.mutate({ ucId: selectedAssignment.use_case, content })
           }
           onSaveJira={(value) =>
-            jiraTicketMutation.mutate({ ucId: ucDetail.use_case.id, jiraTicket: value })
+            jiraTicketMutation.mutate({ ucId: selectedAssignment.use_case, jiraTicket: value })
           }
           isSavingJira={jiraTicketMutation.isPending}
           ucComment={ucComment}
@@ -507,11 +470,13 @@ return (
 }
 
 function UseCaseDetailModal({
-  detail, onClose,
-  onUploadScreenshot, onDeleteScreenshot, onAddComment, onSaveJira, isSavingJira,
+  assignment, detail, isLoading,
+  onClose, onUploadScreenshot, onDeleteScreenshot, onAddComment, onSaveJira, isSavingJira,
   ucComment, onCommentChange, isUploading, fileInputRef,
 }: {
-  detail: UseCaseDetail;
+  assignment: UseCaseAssignment;
+  detail?: UseCaseDetail;
+  isLoading: boolean;
   onClose: () => void;
   onUploadScreenshot: (file: File, caption: string) => void;
   onDeleteScreenshot: (screenshotId: string) => void;
@@ -525,11 +490,11 @@ function UseCaseDetailModal({
   currentUserId?: number;
 }) {
   const [screenshotCaption, setScreenshotCaption] = useState('');
-  const [jiraValue, setJiraValue] = useState(detail.use_case.jira_ticket || '');
+  const [jiraValue, setJiraValue] = useState(assignment.jira_ticket || '');
 
   const handleJiraBlur = () => {
     const trimmed = jiraValue.trim();
-    if (trimmed !== (detail.use_case.jira_ticket || '')) {
+    if (trimmed !== (assignment.jira_ticket || '')) {
       onSaveJira(trimmed);
     }
   };
@@ -543,20 +508,26 @@ function UseCaseDetailModal({
     }
   };
 
-  const uc = detail.use_case;
-  const assignment = detail.assignment;
+  const uc = detail?.use_case;
+  const order = uc?.order ?? assignment.use_case_order;
+  const ucKey = uc?.use_case_text ?? assignment.use_case_id_str;
+  const ucDesc = uc?.description ?? assignment.use_case_desc;
+  const screenshots = detail?.screenshots ?? [];
+  const comments = detail?.comments ?? [];
+  const loaded = !!uc;
+  const showSkeleton = isLoading && !detail;
 
   return (
     <Modal
       open
       onClose={onClose}
-      labelledBy={`uc-detail-modal-${uc.order}`}
+      labelledBy={`uc-detail-modal-${order}`}
       maxWidth="max-w-2xl"
       className="p-0"
     >
         <div className="sticky top-0 bg-surface z-10 flex items-center justify-between p-4 pb-3 border-b border-outline-variant">
-          <h3 id={`uc-detail-modal-${uc.order}`} className="text-headline-sm font-bold text-on-surface">
-            UC#{uc.order} — Détails
+          <h3 id={`uc-detail-modal-${order}`} className="text-headline-sm font-bold text-on-surface">
+            UC#{order} — Détails
           </h3>
           <button onClick={onClose} aria-label="Fermer" className="w-11 h-11 rounded-lg hover:bg-surface-container-low flex items-center justify-center text-on-surface-variant cursor-pointer">✕</button>
         </div>
@@ -591,45 +562,63 @@ function UseCaseDetailModal({
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Use Case ID</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2">{uc.use_case_text || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2">{ucKey || '—'}</p>
           </div>
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Description</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc.description || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{ucDesc || '—'}</p>
           </div>
 
+          {showSkeleton ? (
+            <div className="space-y-4" aria-busy="true" role="status" aria-label="Chargement du cas de test">
+              {['Préconditions', 'Étapes', 'Résultats attendus', 'Résultats observés'].map(s => (
+                <div key={s}>
+                  <div className="h-3 w-28 bg-surface-container-high rounded animate-pulse mb-2" />
+                  <div className="h-10 bg-surface-container-high rounded-lg animate-pulse" />
+                </div>
+              ))}
+              <div className="h-3 w-24 bg-surface-container-high rounded animate-pulse mb-2" />
+              <div className="h-6 w-28 bg-surface-container-high rounded animate-pulse" />
+              <div className="pt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {[...Array(3)].map((_, i) => <div key={i} className="h-32 bg-surface-container-high rounded-lg animate-pulse" />)}
+              </div>
+              <div className="h-3 w-40 bg-surface-container-high rounded animate-pulse mb-2" />
+              <div className="h-24 bg-surface-container-high rounded-lg animate-pulse" />
+            </div>
+          ) : (
+          <>
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Préconditions</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc.preconditions || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc?.preconditions || '—'}</p>
           </div>
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Étapes</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc.steps || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc?.steps || '—'}</p>
           </div>
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Résultats attendus</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc.expected_results || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc?.expected_results || '—'}</p>
           </div>
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Résultats observés</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc.observed_results || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc?.observed_results || '—'}</p>
           </div>
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Automatisé</label>
-            <span className={`inline-block px-2 py-1 rounded text-label-sm ${uc.is_automated ? 'bg-success/20 text-success' : 'bg-surface-container-high text-on-surface-variant'}`}>
-              {uc.is_automated ? 'Oui' : 'Non'}
+            <span className={`inline-block px-2 py-1 rounded text-label-sm ${uc?.is_automated ? 'bg-success/20 text-success' : 'bg-surface-container-high text-on-surface-variant'}`}>
+              {uc?.is_automated ? 'Oui' : 'Non'}
             </span>
           </div>
 
           {/* Screenshots */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <label className="text-label-md text-on-surface-variant font-bold">Captures d'écran ({detail.screenshots.length})</label>
+              <label className="text-label-md text-on-surface-variant font-bold">Captures d'écran ({screenshots.length})</label>
               <div className="flex gap-2 items-center">
                 <input
                   type="text"
@@ -650,9 +639,9 @@ function UseCaseDetailModal({
                 </Button>
               </div>
             </div>
-            {detail.screenshots.length > 0 ? (
+            {screenshots.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {detail.screenshots.map((ss: UseCaseScreenshot) => (
+                {screenshots.map((ss: UseCaseScreenshot) => (
                   <div key={ss.id} className="relative group bg-surface-container-low rounded-lg overflow-hidden border border-outline-variant">
                     <img src={ss.image} alt={ss.caption || 'Screenshot'} className="w-full h-32 object-cover" />
                     {ss.caption && <p className="text-body-xs text-on-surface-variant px-2 py-1 truncate">{ss.caption}</p>}
@@ -671,9 +660,9 @@ function UseCaseDetailModal({
 
           {/* Comments */}
           <div>
-            <label className="text-label-md text-on-surface-variant font-bold block mb-3">Commentaires ({detail.comments.length})</label>
+            <label className="text-label-md text-on-surface-variant font-bold block mb-3">Commentaires ({comments.length})</label>
             <div className="max-h-48 overflow-y-auto space-y-3 mb-3">
-              {detail.comments.map(c => (
+              {comments.map(c => (
                 <div key={c.id} className="bg-surface-container-low rounded-lg p-3">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-label-sm font-medium text-on-surface">{c.author.full_name}</span>
@@ -682,7 +671,7 @@ function UseCaseDetailModal({
                   <p className="text-body-sm text-on-surface">{c.content}</p>
                 </div>
               ))}
-              {detail.comments.length === 0 && (
+              {comments.length === 0 && (
                 <p className="text-body-sm text-on-surface-variant italic">Aucun commentaire</p>
               )}
             </div>
@@ -694,11 +683,13 @@ function UseCaseDetailModal({
                 className="flex-1 text-body-sm p-2 border border-outline-variant rounded-lg bg-surface resize-none outline-none focus:border-primary"
                 rows={2}
               />
-              <Button size="sm" onClick={() => onAddComment(ucComment)} disabled={!ucComment.trim()}>
+              <Button size="sm" onClick={() => onAddComment(ucComment)} disabled={!ucComment.trim() || !loaded}>
                 Envoyer
               </Button>
             </div>
           </div>
+          </>
+          )}
         </div>
     </Modal>
   );
