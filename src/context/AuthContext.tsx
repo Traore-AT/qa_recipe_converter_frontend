@@ -20,20 +20,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      try {
-        const r = await client.get<{ csrfToken: string }>('/csrf/');
-        setCsrfToken(r.data.csrfToken);
-      } catch {
-        // CSRF cookie may already be set; continue anyway
-      }
-      try {
-        const r = await authApi.me();
-        setUser(r.data);
-      } catch {
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
+      // Lance CSRF et session en parallèle : un seul aller-retour réseau,
+      // et un seul réveil du serveur (Render free en cas de cold start).
+      const [csrfRes, meRes] = await Promise.allSettled([
+        client.get<{ csrfToken: string }>('/csrf/'),
+        authApi.me(),
+      ]);
+      if (csrfRes.status === 'fulfilled') setCsrfToken(csrfRes.value.data.csrfToken);
+      if (meRes.status === 'fulfilled') setUser(meRes.value.data);
+      else setUser(null);
+      setLoading(false);
     })();
   }, []);
 
