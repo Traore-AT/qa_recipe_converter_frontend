@@ -125,6 +125,7 @@ export interface ExtractedUseCase {
   observed_results: string;
   is_automated: boolean;
   status: string;
+  jira_ticket?: string;
   comments?: ExtractedUseCaseComment[];
 }
 
@@ -236,6 +237,8 @@ export interface UseCaseAssignment {
   use_case_order: number;
   use_case_id_str: string;
   use_case_desc: string;
+  jira_ticket?: string;
+  jira_url?: string | null;
   sprint: string | null;
   assigned_to: string;
   assigned_to_user: User;

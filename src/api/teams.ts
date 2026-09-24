@@ -122,6 +122,9 @@ export const teamsApi = {
   updateUseCaseStatus: (teamSlug: string, projectSlug: string, ucId: string, status: string, observedResults?: string) =>
     client.patch(`/teams/${teamSlug}/projects/${projectSlug}/use-cases/${ucId}/status/`, { status, observed_results: observedResults }).then(r => r.data),
 
+  updateUseCaseJiraTicket: (teamSlug: string, projectSlug: string, ucId: string, jiraTicket: string) =>
+    client.patch<{ id: string; jira_ticket: string }>(`/teams/${teamSlug}/projects/${projectSlug}/use-cases/${ucId}/jira/`, { jira_ticket: jiraTicket }).then(r => r.data),
+
   listUseCaseComments: (teamSlug: string, projectSlug: string, ucId: string) =>
     client.get<PaginatedResponse<UseCaseComment>>(`/teams/${teamSlug}/projects/${projectSlug}/use-cases/${ucId}/comments/`).then(r => r.data),
 

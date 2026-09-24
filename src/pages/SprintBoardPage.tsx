@@ -120,6 +120,15 @@ export default function SprintBoardPage() {
     },
   });
 
+  const jiraTicketMutation = useMutation({
+    mutationFn: ({ ucId, jiraTicket }: { ucId: string; jiraTicket: string }) =>
+      teamsApi.updateUseCaseJiraTicket(slug!, projectSlug!, ucId, jiraTicket),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.ucDetail(slug, projectSlug, detailAssignmentId) });
+    },
+  });
+
   const uploadScreenshotMutation = useMutation({
     mutationFn: ({ assignmentId, file, caption }: { assignmentId: string; file: File; caption: string }) => {
       const fd = new FormData();
@@ -327,6 +336,20 @@ return (
                     <p className="text-body-sm text-on-surface line-clamp-2 mb-2.5 leading-snug">
                       {assignment.use_case_id_str || assignment.use_case_desc}
                     </p>
+                    {assignment.jira_ticket ? (
+                      <div className="mb-2.5 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[0.875rem] text-primary">link</span>
+                        <a
+                          href={assignment.jira_url || '#'}
+                          target={assignment.jira_url ? '_blank' : undefined}
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-info-container/50 border border-info/20 text-info text-body-xs font-semibold font-mono hover:bg-info-container transition-colors"
+                        >
+                          {assignment.jira_ticket}
+                        </a>
+                      </div>
+                    ) : null}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="w-4 h-4 rounded-full bg-primary/20 text-primary text-[0.5rem] font-bold flex items-center justify-center shrink-0">
@@ -468,6 +491,10 @@ return (
           onAddComment={(content) =>
             commentMutation.mutate({ ucId: ucDetail.use_case.id, content })
           }
+          onSaveJira={(value) =>
+            jiraTicketMutation.mutate({ ucId: ucDetail.use_case.id, jiraTicket: value })
+          }
+          isSavingJira={jiraTicketMutation.isPending}
           ucComment={ucComment}
           onCommentChange={setUcComment}
           isUploading={uploadScreenshotMutation.isPending}
@@ -481,7 +508,7 @@ return (
 
 function UseCaseDetailModal({
   detail, onClose,
-  onUploadScreenshot, onDeleteScreenshot, onAddComment,
+  onUploadScreenshot, onDeleteScreenshot, onAddComment, onSaveJira, isSavingJira,
   ucComment, onCommentChange, isUploading, fileInputRef,
 }: {
   detail: UseCaseDetail;
@@ -489,6 +516,8 @@ function UseCaseDetailModal({
   onUploadScreenshot: (file: File, caption: string) => void;
   onDeleteScreenshot: (screenshotId: string) => void;
   onAddComment: (content: string) => void;
+  onSaveJira: (value: string) => void;
+  isSavingJira: boolean;
   ucComment: string;
   onCommentChange: (v: string) => void;
   isUploading: boolean;
@@ -496,6 +525,14 @@ function UseCaseDetailModal({
   currentUserId?: number;
 }) {
   const [screenshotCaption, setScreenshotCaption] = useState('');
+  const [jiraValue, setJiraValue] = useState(detail.use_case.jira_ticket || '');
+
+  const handleJiraBlur = () => {
+    const trimmed = jiraValue.trim();
+    if (trimmed !== (detail.use_case.jira_ticket || '')) {
+      onSaveJira(trimmed);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -533,6 +570,22 @@ function UseCaseDetailModal({
             <div>
               <span className="text-on-surface-variant font-medium">Statut :</span>
               <span className="ml-2 text-on-surface">{assignment.status}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-label-md text-on-surface-variant block mb-1">Ticket Jira</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={jiraValue}
+                onChange={e => setJiraValue(e.target.value)}
+                onBlur={handleJiraBlur}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                placeholder="Ex : QA-123"
+                className="flex-1 text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/40 border border-outline-variant"
+              />
+              {isSavingJira && <span className="text-body-xs text-on-surface-variant animate-pulse">⏳ Enregistrement…</span>}
             </div>
           </div>
 

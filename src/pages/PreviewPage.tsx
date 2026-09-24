@@ -116,6 +116,7 @@ export default function PreviewPage() {
         observed_results: uc.observed_results,
         is_automated: uc.is_automated,
         status: uc.status,
+        jira_ticket: uc.jira_ticket || '',
       })),
     }),
     onSuccess: () => {
@@ -403,7 +404,7 @@ export default function PreviewPage() {
           <table className="w-full border-collapse text-body-sm">
             <thead>
               <tr style={{ background: 'linear-gradient(135deg, #1e3a5f, #0f2342)' }}>
-                {['☐', '#', 'CAS', 'Use Case', 'Description', 'Préconditions', 'Étapes', 'Résultats Attendus', 'Résultats Observés', 'Statut', '🤖'].map(h => (
+                {['☐', '#', 'CAS', 'Tickets Jira', 'Use Case', 'Description', 'Préconditions', 'Étapes', 'Résultats Attendus', 'Résultats Observés', 'Statut', '🤖'].map(h => (
                   <th key={h} className="text-white px-3 py-3 text-left font-semibold text-body-xs whitespace-nowrap border-r border-white/10 last:border-r-0">
                     {h === '☐' ? (
                       <input type="checkbox" checked={selectedUcIds.size > 0 && selectedUcIds.size === filteredUcs.length} onChange={toggleSelectAll} className="w-4 h-4 rounded cursor-pointer accent-primary" />
@@ -415,7 +416,7 @@ export default function PreviewPage() {
             {selectedUcIds.size > 0 && (
               <tbody>
                 <tr className="bg-primary-fixed/40">
-                  <td colSpan={11} className="px-3 py-2">
+                  <td colSpan={12} className="px-3 py-2">
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="text-body-sm font-semibold text-primary">{selectedUcIds.size} sélectionné(s)</span>
                       <select
@@ -445,6 +446,16 @@ export default function PreviewPage() {
                   </td>
                   <td className="px-3 py-2.5 text-center font-bold font-mono text-on-surface-variant/40 text-body-xs">{uc.order || idx + 1}</td>
                   <td className="px-3 py-2.5 text-center font-bold font-mono text-primary text-body-xs">UC-{(uc.order || idx + 1).toString().padStart(3, '0')}</td>
+                  <td className="px-3 py-2.5 max-w-[140px]">
+                    <input
+                      type="text"
+                      defaultValue={uc.jira_ticket || ''}
+                      placeholder="QA-123"
+                      onBlur={e => updateUc(uc.id, 'jira_ticket', e.target.value.trim())}
+                      aria-label={`Ticket Jira du cas ${uc.order}`}
+                      className="w-full rounded px-1 py-0.5 text-left outline-none focus:bg-warning-container/60 focus:ring-2 focus:ring-warning text-body-xs font-mono text-info bg-transparent placeholder:text-on-surface-variant/40"
+                    />
+                  </td>
                   <td className="px-3 py-2.5">
                     <span
                       contentEditable
