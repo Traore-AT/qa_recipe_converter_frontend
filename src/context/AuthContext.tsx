@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import client from '../api/client';
+import client, { setCsrfToken } from '../api/client';
 import { authApi } from '../api/auth';
 import type { User } from '../types';
 
@@ -21,7 +21,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        await client.get('/csrf/');
+        const r = await client.get<{ csrfToken: string }>('/csrf/');
+        setCsrfToken(r.data.csrfToken);
       } catch {
         // CSRF cookie may already be set; continue anyway
       }
@@ -38,7 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshCsrf = async () => {
     try {
-      await client.get('/csrf/');
+      const r = await client.get<{ csrfToken: string }>('/csrf/');
+      setCsrfToken(r.data.csrfToken);
     } catch {
       // CSRF cookie may already be set; continue anyway
     }

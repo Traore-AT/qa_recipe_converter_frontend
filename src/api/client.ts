@@ -1,6 +1,13 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
 
+let csrfToken = '';
+
+export function setCsrfToken(token: string): void {
+  csrfToken = token;
+}
+
 function getCsrfToken(): string {
+  if (csrfToken) return csrfToken;
   const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : '';
 }
@@ -26,7 +33,25 @@ const AUTH_EXEMPT_PATTERNS = ['/auth/login/', '/auth/register/', '/auth/me/', '/
 
 client.interceptors.response.use(
   (response) => response,
-  (error: unknown) => {
+  async (error: unknown) => {
+    if (axios.isAxiosError(error) && error.response?.status === 403) {
+      const data = error.response.data as { detail?: unknown } | null;
+      const detail = typeof data?.detail === 'string' ? data.detail : '';
+      if (detail.includes('CSRF')) {
+        const config = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+        if (config && !config._retry) {
+          config._retry = true;
+          try {
+            const r = await client.get<{ csrfToken: string }>('/csrf/');
+            setCsrfToken(r.data.csrfToken);
+            config.headers.set('X-CSRFToken', r.data.csrfToken);
+            return client.request(config);
+          } catch {
+            // fall through to generic error handling
+          }
+        }
+      }
+    }
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       const config = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
       if (config?._retry) return Promise.reject(error);
