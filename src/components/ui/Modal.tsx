@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn';
 
 interface ModalProps {
@@ -84,9 +85,11 @@ export function Modal({ open, onClose, labelledBy, describedBy, children, classN
 
   if (!open) return null;
 
-  return (
+  // Portail vers <body> : permet de centrer la modale sur le viewport réel,
+  // même si un ancêtre (layout/scroll) applique transform/overflow.
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-inverse-surface/60 backdrop-blur-sm p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -102,7 +105,8 @@ export function Modal({ open, onClose, labelledBy, describedBy, children, classN
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
