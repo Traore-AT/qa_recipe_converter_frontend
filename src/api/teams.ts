@@ -147,6 +147,9 @@ export const teamsApi = {
   deleteDefect: (teamSlug: string, projectSlug: string, defectId: string) =>
     client.delete(`/teams/${teamSlug}/projects/${projectSlug}/defects/${defectId}/`),
 
+  createTeamMemberAccount: (data: { username: string; password: string; role: string; team_slugs: string[] }) =>
+    client.post('/teams/members/create/', data).then(r => r.data),
+
   getDefectStats: (teamSlug: string, projectSlug: string) =>
     client.get<DefectStats>(`/teams/${teamSlug}/projects/${projectSlug}/defects/stats/`).then(r => r.data),
 
