@@ -19,9 +19,10 @@ const { mockTeamsApi, mockNavigate } = vi.hoisted(() => ({
     createAssignments: vi.fn(),
     updateUseCaseStatus: vi.fn(),
     getUseCaseDetail: vi.fn(),
-    createSprintTicket: vi.fn(),
-    updateSprintTicket: vi.fn(),
-    deleteSprintTicket: vi.fn(),
+    createSprintCase: vi.fn(),
+    updateSprintCase: vi.fn(),
+    deleteAssignment: vi.fn(),
+    createUseCaseComment: vi.fn(),
   },
   mockNavigate: vi.fn(),
 }));
@@ -45,17 +46,16 @@ const mockBoard = {
   sprint: mockSprints.results[0],
   columns: {
     'À tester': [
-      { id: 'a1', use_case: 'uc1', use_case_order: 1, use_case_id_str: 'TC001', use_case_desc: 'Login test', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'À tester', jira_ticket: 'QA-001', jira_url: 'https://jira.example/browse/QA-001' },
+      { id: 'a1', use_case: 'uc1', case_number: 1, use_case_order: 1, use_case_text: 'TC001', use_case_id_str: 'TC001', use_case_desc: 'Login test', description: 'Login test', preconditions: '', steps: '', expected_results: '', observed_results: '', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'À tester', jira_ticket: 'QA-001', jira_url: 'https://jira.example/browse/QA-001' },
     ],
     'En cours': [
-      { id: 'a2', use_case: 'uc2', use_case_order: 2, use_case_id_str: 'TC002', use_case_desc: 'Logout test', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'En cours' },
+      { id: 'a2', use_case: 'uc2', case_number: 2, use_case_order: 2, use_case_text: 'TC002', use_case_id_str: 'TC002', use_case_desc: 'Logout test', description: 'Logout test', preconditions: '', steps: '', expected_results: '', observed_results: '', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'En cours' },
     ],
-    'Passé': [{ id: 'a3', use_case: 'uc3', use_case_order: 3, use_case_id_str: 'TC003', use_case_desc: 'Search test', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'Passé' }],
+    'Passé': [{ id: 'a3', use_case: 'uc3', case_number: 3, use_case_order: 3, use_case_text: 'TC003', use_case_id_str: 'TC003', use_case_desc: 'Search test', description: 'Search test', preconditions: '', steps: '', expected_results: '', observed_results: '', sprint: 's1', assigned_to: 'pm1', assigned_to_user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, assigned_by: '1', assigned_by_user: mockUser, assigned_at: '2026-06-01', status: 'Passé' }],
     'Échoué': [],
     'Bloqué': [],
   },
   stats: mockSprints.results[0].stats,
-  tickets: [],
 };
 
 function renderPage(initialRoute = '/teams/qa-team/projects/qa-project/sprint-board') {
@@ -115,15 +115,15 @@ describe('SprintBoardPage', () => {
     });
   });
 
-  it('creates a standalone ticket in the selected sprint', async () => {
+  it('creates a case in the selected Kanban column using the shared case API', async () => {
     const user = userEvent.setup();
-    mockTeamsApi.createSprintTicket.mockResolvedValue({ id: 'ticket-1', ticket_number: 'TKT-ABCD1234' });
+    mockTeamsApi.createSprintCase.mockResolvedValue({ id: 'assignment-1', case_number: 4 });
     renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
-    await user.click(await screen.findByText('+ Créer un cas / ticket'));
-    await user.type(screen.getByLabelText('Titre *'), 'Connexion utilisateur');
-    await user.click(screen.getByText('Enregistrer le ticket'));
-    await waitFor(() => expect(mockTeamsApi.createSprintTicket).toHaveBeenCalledWith(
-      'qa-team', 'qa-project', 's1', expect.objectContaining({ title: 'Connexion utilisateur', status: 'À tester' }),
+    await user.click(await screen.findByRole('button', { name: 'Créer un cas dans À tester' }));
+    await user.type(screen.getByLabelText('Use Case (titre) *'), 'Connexion utilisateur');
+    await user.click(screen.getByText('Enregistrer le cas'));
+    await waitFor(() => expect(mockTeamsApi.createSprintCase).toHaveBeenCalledWith(
+      'qa-team', 'qa-project', 's1', expect.objectContaining({ use_case_text: 'Connexion utilisateur', status: 'À tester' }),
     ));
   });
 
@@ -210,7 +210,7 @@ describe('SprintBoardPage', () => {
     await waitFor(() => screen.getByText('CAS-001'));
     await user.click(screen.getByText('CAS-001'));
     await waitFor(() => {
-      expect(screen.getByText(/UC#1 — Détails/)).toBeInTheDocument();
+      expect(screen.getByText(/CAS-001 — Détails/)).toBeInTheDocument();
       expect(screen.getByText('Assigné à :')).toBeInTheDocument();
       expect(screen.getByDisplayValue('QA-001')).toBeInTheDocument();
     });

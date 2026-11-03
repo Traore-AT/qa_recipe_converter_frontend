@@ -117,7 +117,7 @@ export default function MemberProgressPage() {
                   <Card key={uc.id} className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-body-sm font-medium text-on-surface truncate">
-                        UC#{uc.use_case_order} — {uc.use_case_desc || uc.use_case_id_str}
+                        CAS-{String(uc.case_number).padStart(3, '0')} — {uc.use_case_text || uc.use_case_desc}
                       </p>
                     </div>
                     <Badge variant={uc.status === 'Passé' ? 'success' : uc.status === 'Échoué' ? 'error' : uc.status === 'Bloqué' ? 'warning' : uc.status === 'En cours' ? 'info' : 'default'}>
