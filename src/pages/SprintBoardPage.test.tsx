@@ -136,6 +136,19 @@ describe('SprintBoardPage', () => {
     });
   });
 
+  it('shows accessible edit and delete icon actions on each case card', async () => {
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    expect(await screen.findByRole('button', { name: 'Modifier CAS-001' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Supprimer CAS-001' })).toBeInTheDocument();
+  });
+
+  it('opens the case editor from the edit icon', async () => {
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByRole('button', { name: 'Modifier CAS-001' }));
+    expect(await screen.findByRole('dialog', { name: 'Modifier le cas' })).toBeInTheDocument();
+  });
+
   it('shows assigned user names', async () => {
     renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
     await waitFor(() => {

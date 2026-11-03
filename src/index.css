@@ -137,6 +137,24 @@ body {
   box-sizing: border-box;
 }
 
+img, video, canvas, svg {
+  max-width: 100%;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --text-headline-lg: 1.75rem;
+    --text-headline-lg--line-height: 2.125rem;
+    --text-headline-md: 1.5rem;
+    --text-headline-md--line-height: 1.875rem;
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }

@@ -199,7 +199,7 @@ export default function SprintBoardPage() {
 
   return (
     <PageLayout>
-      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         <div>
           <button onClick={() => navigate(`/teams/${slug}/projects/${projectSlug}`)} className="flex items-center gap-1 text-body-sm text-on-surface-variant hover:text-primary transition-colors mb-1 cursor-pointer">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
@@ -207,7 +207,7 @@ export default function SprintBoardPage() {
           </button>
           <h1 className="text-headline-lg font-bold text-on-surface">Tableau Sprint</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           {selectedSprint && (
             <Button variant="secondary" size="sm" onClick={() => teamsApi.exportSprintCSV(slug!, projectSlug!, selectedSprint)}>
               Exporter CSV
@@ -278,17 +278,17 @@ export default function SprintBoardPage() {
         </Card>
       )}
 
-      {!!selectedSprint && <div className="flex justify-between items-center gap-3 mb-3"><p className="text-body-sm text-on-surface-variant">Les tickets sont intégrés aux colonnes du sprint. Glissez une carte pour changer son statut.</p><input type="search" aria-label="Rechercher un ticket par numéro" placeholder="Rechercher par numéro de ticket" value={ticketQuery} onChange={e => setTicketQuery(e.target.value)} className="w-full sm:w-80 border border-outline-variant rounded-lg px-3 py-2 bg-surface text-on-surface" /></div>}
+      {!!selectedSprint && <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-3"><p className="text-body-sm text-on-surface-variant">Les tickets sont intégrés aux colonnes du sprint. Glissez une carte pour changer son statut.</p><input type="search" aria-label="Rechercher un ticket par numéro" placeholder="Rechercher par numéro de ticket" value={ticketQuery} onChange={e => setTicketQuery(e.target.value)} className="w-full sm:w-80 min-w-0 border border-outline-variant rounded-lg px-3 py-2 bg-surface text-on-surface" /></div>}
       {(saveTicketMutation.isError || saveAssignmentMutation.isError || deleteAssignmentMutation.isError || statusMutation.isError) && <p role="alert" className="mb-3 text-error">{getApiErrorMessage(saveTicketMutation.error || saveAssignmentMutation.error || deleteAssignmentMutation.error || statusMutation.error, 'Échec de l’opération sur le cas.')}</p>}
 
       {boardLoading ? (
-        <div className="animate-pulse grid grid-cols-5 gap-4">
-          {[...Array(5)].map((_, i) => <div key={i} className="h-96 bg-surface-container-high rounded-xl" />)}
+        <div className="animate-pulse flex gap-4 overflow-x-auto pb-3 xl:grid xl:grid-cols-5 xl:overflow-visible">
+          {[...Array(5)].map((_, i) => <div key={i} className="h-96 min-w-[min(85vw,320px)] sm:min-w-[300px] xl:min-w-0 bg-surface-container-high rounded-xl" />)}
         </div>
       ) : board ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="flex gap-4 overflow-x-auto pb-3 snap-x snap-mandatory xl:grid xl:grid-cols-5 xl:overflow-visible xl:snap-none">
           {STATUS_COLUMNS.map(col => (
-            <div key={col} className="bg-surface-container-low rounded-xl p-3 min-h-[400px]" onDrop={(e) => handleColumnDrop(e, col)} onDragOver={(e) => e.preventDefault()}>
+            <div key={col} className="bg-surface-container-low rounded-xl p-3 min-h-[400px] min-w-[min(85vw,320px)] sm:min-w-[300px] xl:min-w-0 snap-start" onDrop={(e) => handleColumnDrop(e, col)} onDragOver={(e) => e.preventDefault()}>
               <div className="flex items-center justify-between mb-3 px-1">
                 <h3 className="text-label-md font-bold text-on-surface">{col}</h3>
                 {canManage && <button type="button" aria-label={`Créer un cas dans ${col}`} onClick={() => setTicketEditor({ use_case_text: '', jira_ticket: '', description: '', preconditions: '', steps: '', expected_results: '', observed_results: '', status: col, assigned_to: null, comment: '' })} className="text-primary text-label-sm hover:underline">+ Créer</button>}
@@ -306,7 +306,7 @@ export default function SprintBoardPage() {
                     'Bloqué': 'bg-warning text-white',
                   };
 return (
-                    <div key={assignment.id} className="bg-surface border border-outline-variant rounded-lg p-3 cursor-grab draggable"
+                    <div key={assignment.id} className="min-w-0 bg-surface border border-outline-variant rounded-lg p-3 cursor-grab draggable"
                      onClick={(e) => { e.stopPropagation(); setDetailAssignmentId(assignment.id); }}
                      draggable={true}
                      onDragStart={(e) => {
@@ -362,9 +362,13 @@ return (
                         )}
                       </div>
                     </div>
-                    {canManage && <div className="flex gap-2 mt-2">
-                      <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setAssignmentEditor({ ...assignment }); }}>Modifier</Button>
-                      <Button size="sm" variant="secondary" disabled={deleteAssignmentMutation.isPending} onClick={e => { e.stopPropagation(); if (window.confirm(`Supprimer CAS-${String(assignment.case_number).padStart(3, '0')} de la recette et de tous les sprints ?`)) deleteAssignmentMutation.mutate(assignment.id); }}>Supprimer</Button>
+                    {canManage && <div className="flex justify-end gap-2 mt-2">
+                      <button type="button" aria-label={`Modifier CAS-${String(assignment.case_number).padStart(3, '0')}`} title="Modifier ce cas" onClick={e => { e.stopPropagation(); setAssignmentEditor({ ...assignment }); }} className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg border border-outline-variant px-2 text-primary hover:bg-primary-fixed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                        <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L8 18l-4 1 1-4Z"/></svg><span className="hidden sm:inline text-label-sm">Modifier</span>
+                      </button>
+                      <button type="button" aria-label={`Supprimer CAS-${String(assignment.case_number).padStart(3, '0')}`} title="Supprimer ce cas" disabled={deleteAssignmentMutation.isPending} onClick={e => { e.stopPropagation(); if (window.confirm(`Supprimer CAS-${String(assignment.case_number).padStart(3, '0')} de la recette et de tous les sprints ?`)) deleteAssignmentMutation.mutate(assignment.id); }} className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg border border-error/40 px-2 text-error hover:bg-error-container/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error disabled:opacity-50">
+                        <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg><span className="hidden sm:inline text-label-sm">Supprimer</span>
+                      </button>
                     </div>}
                   </div>
                 );})}
@@ -390,7 +394,7 @@ return (
         onClose={() => setShowCreateModal(false)}
         labelledBy="create-sprint-modal-title"
         maxWidth="max-w-md"
-        className="p-7"
+        className="p-4 sm:p-7"
       >
         <h3 id="create-sprint-modal-title" className="text-headline-sm font-bold text-on-surface mb-5">+ Nouveau Sprint</h3>
         <div className="space-y-4">
@@ -404,7 +408,7 @@ return (
             <textarea id="sprint-goal" value={newSprint.goal} onChange={e => setNewSprint(p => ({ ...p, goal: e.target.value }))}
                       className="w-full border border-outline-variant rounded-lg bg-surface px-3 py-2.5 outline-none focus:border-primary resize-none" rows={3} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="sprint-start-date" className="text-label-md text-on-surface-variant block mb-1">Début *</label>
               <input id="sprint-start-date" type="date" value={newSprint.start_date} onChange={e => setNewSprint(p => ({ ...p, start_date: e.target.value }))}
@@ -417,7 +421,7 @@ return (
             </div>
           </div>
         </div>
-        <div className="flex gap-3 justify-end mt-6">
+        <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end mt-6 [&>button]:w-full sm:[&>button]:w-auto">
           <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
             Annuler
           </Button>
@@ -432,7 +436,7 @@ return (
         onClose={() => setShowAssignModal(false)}
         labelledBy="assign-modal-title"
         maxWidth="max-w-lg"
-        className="p-7"
+        className="p-4 sm:p-7"
       >
         <h3 id="assign-modal-title" className="text-headline-sm font-bold text-on-surface mb-5">+ Assigner des cas à un membre</h3>
         <div className="space-y-4">
@@ -464,7 +468,7 @@ return (
             </div>
           </div>
         </div>
-        <div className="flex gap-3 justify-end mt-6">
+        <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end mt-6 [&>button]:w-full sm:[&>button]:w-auto">
           <Button variant="secondary" onClick={() => setShowAssignModal(false)}>
             Annuler
           </Button>
@@ -474,7 +478,7 @@ return (
         </div>
       </Modal>
 
-      <Modal open={!!ticketEditor} onClose={() => setTicketEditor(null)} labelledBy="ticket-editor-title" maxWidth="max-w-2xl" className="p-7">
+      <Modal open={!!ticketEditor} onClose={() => setTicketEditor(null)} labelledBy="ticket-editor-title" maxWidth="max-w-2xl" className="p-4 sm:p-7">
         <h3 id="ticket-editor-title" className="text-headline-sm font-bold text-on-surface mb-4">Créer un cas commun</h3>
         {ticketEditor && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto pr-1">
           <p className="text-label-md md:col-span-2 text-primary font-mono">Le numéro CAS sera attribué automatiquement et sera identique dans la recette et les sprints.</p>
@@ -490,10 +494,10 @@ return (
           <label className="text-label-md">Assigné à<select value={ticketEditor.assigned_to ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, assigned_to: e.target.value || null }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{members?.results?.map(m => <option key={m.id} value={m.id}>{m.user.full_name}</option>)}</select></label>
         </div>}
         {saveTicketMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(saveTicketMutation.error, 'Enregistrement impossible.')}</p>}
-        <div className="flex justify-end gap-3 mt-5"><Button variant="secondary" onClick={() => setTicketEditor(null)}>Annuler</Button><Button disabled={!canManage || !ticketEditor?.use_case_text.trim() || saveTicketMutation.isPending} onClick={() => ticketEditor && saveTicketMutation.mutate(ticketEditor)}>{saveTicketMutation.isPending ? 'Enregistrement…' : 'Enregistrer le cas'}</Button></div>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-5 [&>button]:w-full sm:[&>button]:w-auto"><Button variant="secondary" onClick={() => setTicketEditor(null)}>Annuler</Button><Button disabled={!canManage || !ticketEditor?.use_case_text.trim() || saveTicketMutation.isPending} onClick={() => ticketEditor && saveTicketMutation.mutate(ticketEditor)}>{saveTicketMutation.isPending ? 'Enregistrement…' : 'Enregistrer le cas'}</Button></div>
       </Modal>
 
-      <Modal open={!!assignmentEditor} onClose={() => setAssignmentEditor(null)} labelledBy="imported-case-editor-title" maxWidth="max-w-2xl" className="p-7">
+      <Modal open={!!assignmentEditor} onClose={() => setAssignmentEditor(null)} labelledBy="imported-case-editor-title" maxWidth="max-w-2xl" className="p-4 sm:p-7">
         <h3 id="imported-case-editor-title" className="text-headline-sm font-bold text-on-surface mb-4">Modifier le cas</h3>
         {assignmentEditor && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto pr-1">
           <p className="text-label-md md:col-span-2 text-primary font-mono">CAS-{String(assignmentEditor.case_number).padStart(3, '0')}</p>
@@ -508,7 +512,7 @@ return (
           <label className="text-label-md md:col-span-2">Assigné à<select value={assignmentEditor.assigned_to || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, assigned_to: e.target.value || null }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{members?.results?.map(m => <option key={m.id} value={m.id}>{m.user.full_name}</option>)}</select></label>
         </div>}
         {saveAssignmentMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(saveAssignmentMutation.error, 'Modification impossible.')}</p>}
-        <div className="flex justify-end gap-3 mt-5"><Button variant="secondary" onClick={() => setAssignmentEditor(null)}>Annuler</Button><Button disabled={!canManage || saveAssignmentMutation.isPending} onClick={() => assignmentEditor && saveAssignmentMutation.mutate(assignmentEditor)}>{saveAssignmentMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}</Button></div>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-5 [&>button]:w-full sm:[&>button]:w-auto"><Button variant="secondary" onClick={() => setAssignmentEditor(null)}>Annuler</Button><Button disabled={!canManage || saveAssignmentMutation.isPending} onClick={() => assignmentEditor && saveAssignmentMutation.mutate(assignmentEditor)}>{saveAssignmentMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}</Button></div>
       </Modal>
 
       {detailAssignmentId && selectedAssignment && (
