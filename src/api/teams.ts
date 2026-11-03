@@ -3,7 +3,7 @@ import type {
   Team, Project, TeamMember, ProjectMember, DashboardData,
   PaginatedResponse, TeamInvitation, ProjectProgress,
   AssignMemberInput, AssignMembersResponse,
-  Sprint, SprintBoard, UseCaseAssignment, Defect, DefectStats,
+  Sprint, SprintBoard, SprintTicket, UseCaseAssignment, Defect, DefectStats,
   WeeklyReport, ActivityLog, UseCaseComment, MemberProgress,
   UseCaseDetail, UseCaseScreenshot,
 } from '../types';
@@ -102,6 +102,15 @@ export const teamsApi = {
 
   getSprintBoard: (teamSlug: string, projectSlug: string, sprintId: string) =>
     client.get<SprintBoard>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/board/`).then(r => r.data),
+
+  createSprintTicket: (teamSlug: string, projectSlug: string, sprintId: string, data: Partial<SprintTicket>) =>
+    client.post<SprintTicket>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/tickets/`, data).then(r => r.data),
+
+  updateSprintTicket: (teamSlug: string, projectSlug: string, sprintId: string, ticketId: string, data: Partial<SprintTicket>) =>
+    client.patch<SprintTicket>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/tickets/${ticketId}/`, data).then(r => r.data),
+
+  deleteSprintTicket: (teamSlug: string, projectSlug: string, sprintId: string, ticketId: string) =>
+    client.delete(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/tickets/${ticketId}/`),
 
   // ── Use Case Assignments ───────────────────────────────────────────────────
   listAssignments: (teamSlug: string, projectSlug: string, params?: { sprint?: string; user_id?: number }) =>

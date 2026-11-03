@@ -227,8 +227,24 @@ export interface Sprint {
 export interface SprintBoard {
   sprint: Sprint;
   columns: Record<string, UseCaseAssignment[]>;
-  tickets: Defect[];
+  tickets: SprintTicket[];
   stats: SprintStats;
+}
+
+export interface SprintTicket {
+  id: string;
+  ticket_number: string;
+  sprint: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: 'low' | 'medium' | 'high';
+  assigned_to: string | null;
+  assigned_to_user: User | null;
+  created_by: number | null;
+  created_by_user: User | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ── Use Case Assignment ─────────────────────────────────────────────────────
