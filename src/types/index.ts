@@ -227,6 +227,7 @@ export interface Sprint {
 export interface SprintBoard {
   sprint: Sprint;
   columns: Record<string, UseCaseAssignment[]>;
+  tickets: Defect[];
   stats: SprintStats;
 }
 
@@ -251,6 +252,8 @@ export interface UseCaseAssignment {
 // ── Defect ──────────────────────────────────────────────────────────────────
 export interface Defect {
   id: string;
+  ticket_number: string;
+  sprint: string | null;
   use_case: string | null;
   project: string;
   title: string;
