@@ -29,9 +29,9 @@ const mockJobData = {
   excel_filename: 'mon_fichier.xlsx',
   company_logo: null,
   use_cases: [
-    { id: 'uc-1', order: 1, use_case_text: 'UC001', description: 'Login test', preconditions: 'User exists', steps: 'Open app\nEnter credentials', expected_results: 'Dashboard shown', observed_results: '', is_automated: true, status: 'Passé' },
-    { id: 'uc-2', order: 2, use_case_text: 'UC002', description: 'Logout test', preconditions: 'User logged in', steps: 'Click logout', expected_results: 'Redirected to login', observed_results: '', is_automated: false, status: 'À tester' },
-    { id: 'uc-3', order: 3, use_case_text: 'UC003', description: 'Password reset', preconditions: '', steps: 'Click forgot password', expected_results: 'Reset email sent', observed_results: '', is_automated: false, status: 'En cours' },
+    { id: 'uc-1', order: 1, case_number: 1, ticket_number: 'CAS-001', use_case_text: 'UC001', description: 'Login test', preconditions: 'User exists', steps: 'Open app\nEnter credentials', expected_results: 'Dashboard shown', observed_results: '', is_automated: true, status: 'Passé' },
+    { id: 'uc-2', order: 2, case_number: 2, ticket_number: 'CAS-002', use_case_text: 'UC002', description: 'Logout test', preconditions: 'User logged in', steps: 'Click logout', expected_results: 'Redirected to login', observed_results: '', is_automated: false, status: 'À tester' },
+    { id: 'uc-3', order: 3, case_number: 3, ticket_number: 'CAS-003', use_case_text: 'UC003', description: 'Password reset', preconditions: '', steps: 'Click forgot password', expected_results: 'Reset email sent', observed_results: '', is_automated: false, status: 'En cours' },
   ],
 };
 
@@ -202,11 +202,11 @@ describe('PreviewPage', () => {
     expect(screen.getByText('CAS')).toBeInTheDocument();
   });
 
-  it('renders CAS values in UC-xxx format', async () => {
+  it('renders canonical CAS identifiers', async () => {
     renderPage();
     await screen.findByText('UC001');
-    expect(screen.getByText('UC-001')).toBeInTheDocument();
-    expect(screen.getByText('UC-002')).toBeInTheDocument();
-    expect(screen.getByText('UC-003')).toBeInTheDocument();
+    expect(screen.getByText('CAS-001')).toBeInTheDocument();
+    expect(screen.getByText('CAS-002')).toBeInTheDocument();
+    expect(screen.getByText('CAS-003')).toBeInTheDocument();
   });
 });

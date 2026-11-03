@@ -117,6 +117,8 @@ export interface ExtractedUseCaseComment {
 export interface ExtractedUseCase {
   id: string;
   order: number;
+  case_number: number;
+  ticket_number: string;
   use_case_text: string;
   description: string;
   preconditions: string;
@@ -227,43 +229,35 @@ export interface Sprint {
 export interface SprintBoard {
   sprint: Sprint;
   columns: Record<string, UseCaseAssignment[]>;
-  tickets: SprintTicket[];
   stats: SprintStats;
-}
-
-export interface SprintTicket {
-  id: string;
-  ticket_number: string;
-  sprint: string;
-  title: string;
-  description: string;
-  status: string;
-  priority: 'low' | 'medium' | 'high';
-  assigned_to: string | null;
-  assigned_to_user: User | null;
-  created_by: number | null;
-  created_by_user: User | null;
-  created_at: string;
-  updated_at: string;
 }
 
 // ── Use Case Assignment ─────────────────────────────────────────────────────
 export interface UseCaseAssignment {
   id: string;
   use_case: string;
+  ticket_number: string;
   use_case_order: number;
+  case_number: number;
   use_case_id_str: string;
   use_case_desc: string;
+  use_case_text: string;
+  description: string;
+  preconditions: string;
+  steps: string;
+  expected_results: string;
+  observed_results: string;
   jira_ticket?: string;
   jira_url?: string | null;
   sprint: string | null;
-  assigned_to: string;
-  assigned_to_user: User;
+  assigned_to: string | null;
+  assigned_to_user: User | null;
   assigned_by: string | null;
   assigned_by_user: User | null;
   assigned_at: string;
   status: string;
 }
+
 
 // ── Defect ──────────────────────────────────────────────────────────────────
 export interface Defect {
@@ -498,6 +492,8 @@ export interface AdminSystem {
 export interface AdminUseCase {
   id: string;
   order: number;
+  case_number: number;
+  ticket_number: string;
   use_case_text: string;
   description: string;
   status: string;

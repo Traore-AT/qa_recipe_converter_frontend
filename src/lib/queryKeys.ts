@@ -38,8 +38,8 @@ export const queryKeys = {
   sprints: (teamSlug?: string, projectSlug?: string) => ['sprints', teamSlug, projectSlug] as const,
   sprintBoard: (teamSlug?: string, projectSlug?: string, sprintId?: string) =>
     ['sprint-board', teamSlug, projectSlug, sprintId] as const,
-  unassignedUcs: (teamSlug?: string, projectSlug?: string) =>
-    ['unassigned-ucs', teamSlug, projectSlug] as const,
+  unassignedUcs: (teamSlug?: string, projectSlug?: string, sprintId?: string) =>
+    ['unassigned-ucs', teamSlug, projectSlug, sprintId] as const,
   ucDetail: (teamSlug?: string, projectSlug?: string, assignmentId?: string | null) =>
     ['uc-detail', teamSlug, projectSlug, assignmentId] as const,
   defects: (teamSlug?: string, projectSlug?: string, status?: string, page?: number) =>

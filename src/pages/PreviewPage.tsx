@@ -445,14 +445,14 @@ export default function PreviewPage() {
                     <input type="checkbox" checked={selectedUcIds.has(uc.id)} onChange={() => toggleSelection(uc.id)} className="w-4 h-4 rounded cursor-pointer accent-primary" />
                   </td>
                   <td className="px-3 py-2.5 text-center font-bold font-mono text-on-surface-variant/40 text-body-xs">{uc.order || idx + 1}</td>
-                  <td className="px-3 py-2.5 text-center font-bold font-mono text-primary text-body-xs">UC-{(uc.order || idx + 1).toString().padStart(3, '0')}</td>
+                  <td className="px-3 py-2.5 text-center font-bold font-mono text-primary text-body-xs">CAS-{uc.case_number.toString().padStart(3, '0')}</td>
                   <td className="px-3 py-2.5 max-w-[140px]">
                     <input
                       type="text"
                       defaultValue={uc.jira_ticket || ''}
                       placeholder="QA-123"
                       onBlur={e => updateUc(uc.id, 'jira_ticket', e.target.value.trim())}
-                      aria-label={`Ticket Jira du cas ${uc.order}`}
+                      aria-label={`Ticket Jira du cas ${uc.case_number}`}
                       className="w-full rounded px-1 py-0.5 text-left outline-none focus:bg-warning-container/60 focus:ring-2 focus:ring-warning text-body-xs font-mono text-info bg-transparent placeholder:text-on-surface-variant/40"
                     />
                   </td>
@@ -493,7 +493,7 @@ export default function PreviewPage() {
                       <select
                         value={uc.status || 'À tester'}
                         onChange={e => updateUc(uc.id, 'status', e.target.value)}
-                        aria-label={`Statut du cas ${uc.order}`}
+                        aria-label={`Statut du cas ${uc.case_number}`}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                       >
                         {['À tester', 'En cours', 'Passé', 'Échoué', 'Bloqué'].map(s => (
@@ -508,7 +508,7 @@ export default function PreviewPage() {
                         type="checkbox"
                         checked={uc.is_automated}
                         onChange={e => updateUc(uc.id, 'is_automated', e.target.checked)}
-                        aria-label={`Marquer le cas ${uc.order} comme automatisable`}
+                        aria-label={`Marquer le cas ${uc.case_number} comme automatisable`}
                         className="sr-only peer"
                       />
                       <div className="w-9 h-5 bg-surface-container-high rounded-full peer-checked:bg-success after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />

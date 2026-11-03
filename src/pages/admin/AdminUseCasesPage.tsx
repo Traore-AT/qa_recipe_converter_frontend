@@ -127,7 +127,7 @@ export default function AdminUseCasesPage() {
           <TBody>
             {useCases.map((uc: AdminUseCase) => (
               <TR key={uc.id}>
-                <TD className="whitespace-nowrap">UC#{uc.order}</TD>
+                <TD className="whitespace-nowrap">CAS-{String(uc.case_number).padStart(3, '0')}</TD>
                 <TD>
                   <span className="block max-w-md truncate font-semibold text-on-surface" title={uc.use_case_text}>
                     {uc.use_case_text || 'Sans description'}

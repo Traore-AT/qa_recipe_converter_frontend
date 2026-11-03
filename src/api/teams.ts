@@ -3,7 +3,7 @@ import type {
   Team, Project, TeamMember, ProjectMember, DashboardData,
   PaginatedResponse, TeamInvitation, ProjectProgress,
   AssignMemberInput, AssignMembersResponse,
-  Sprint, SprintBoard, SprintTicket, UseCaseAssignment, Defect, DefectStats,
+  Sprint, SprintBoard, UseCaseAssignment, Defect, DefectStats,
   WeeklyReport, ActivityLog, UseCaseComment, MemberProgress,
   UseCaseDetail, UseCaseScreenshot,
 } from '../types';
@@ -103,14 +103,8 @@ export const teamsApi = {
   getSprintBoard: (teamSlug: string, projectSlug: string, sprintId: string) =>
     client.get<SprintBoard>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/board/`).then(r => r.data),
 
-  createSprintTicket: (teamSlug: string, projectSlug: string, sprintId: string, data: Partial<SprintTicket>) =>
-    client.post<SprintTicket>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/tickets/`, data).then(r => r.data),
-
-  updateSprintTicket: (teamSlug: string, projectSlug: string, sprintId: string, ticketId: string, data: Partial<SprintTicket>) =>
-    client.patch<SprintTicket>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/tickets/${ticketId}/`, data).then(r => r.data),
-
-  deleteSprintTicket: (teamSlug: string, projectSlug: string, sprintId: string, ticketId: string) =>
-    client.delete(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/tickets/${ticketId}/`),
+  createSprintCase: (teamSlug: string, projectSlug: string, sprintId: string, data: Partial<UseCaseAssignment> & { comment?: string }) =>
+    client.post<UseCaseAssignment>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/cases/`, data).then(r => r.data),
 
   // ── Use Case Assignments ───────────────────────────────────────────────────
   listAssignments: (teamSlug: string, projectSlug: string, params?: { sprint?: string; user_id?: number }) =>
@@ -122,9 +116,12 @@ export const teamsApi = {
   deleteAssignment: (teamSlug: string, projectSlug: string, assignmentId: string) =>
     client.delete(`/teams/${teamSlug}/projects/${projectSlug}/assignments/${assignmentId}/`),
 
-  getUnassignedUseCases: (teamSlug: string, projectSlug: string) =>
-    client.get<PaginatedResponse<{ id: string; order: number; use_case_text: string; description: string; status: string }>>(
-      `/teams/${teamSlug}/projects/${projectSlug}/unassigned-ucs/`
+  updateSprintCase: (teamSlug: string, projectSlug: string, assignmentId: string, data: Partial<UseCaseAssignment>) =>
+    client.patch<UseCaseAssignment>(`/teams/${teamSlug}/projects/${projectSlug}/assignments/${assignmentId}/`, data).then(r => r.data),
+
+  getUnassignedUseCases: (teamSlug: string, projectSlug: string, sprintId?: string) =>
+    client.get<PaginatedResponse<{ id: string; order: number; case_number: number; ticket_number: string; use_case_text: string; description: string; status: string }>>(
+      `/teams/${teamSlug}/projects/${projectSlug}/unassigned-ucs/`, { params: sprintId ? { sprint: sprintId } : undefined }
     ).then(r => r.data),
 
   // ── Use Case Execution ─────────────────────────────────────────────────────

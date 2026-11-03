@@ -7,7 +7,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, ProjectMember, SprintTicket } from '../types';
+import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, ProjectMember } from '../types';
 import { queryKeys } from '../lib/queryKeys';
 import { useAuth } from '../context/AuthContext';
 import { getApiErrorMessage } from '../lib/errors';
@@ -20,6 +20,8 @@ const STATUS_COLORS: Record<string, string> = {
   'Échoué': 'bg-error',
   'Bloqué': 'bg-warning',
 };
+
+type SprintCaseDraft = Pick<UseCaseAssignment, 'use_case_text' | 'jira_ticket' | 'description' | 'preconditions' | 'steps' | 'expected_results' | 'observed_results' | 'status' | 'assigned_to'> & { comment: string };
 
 export default function SprintBoardPage() {
   const { slug, projectSlug, sprintId } = useParams<{ slug: string; projectSlug: string; sprintId: string }>();
@@ -34,15 +36,15 @@ export default function SprintBoardPage() {
   const [detailAssignmentId, setDetailAssignmentId] = useState<string | null>(null);
   const [ucComment, setUcComment] = useState('');
   const [ticketQuery, setTicketQuery] = useState('');
-  const [ticketEditor, setTicketEditor] = useState<Partial<SprintTicket> | null>(null);
+  const [ticketEditor, setTicketEditor] = useState<SprintCaseDraft | null>(null);
+  const [assignmentEditor, setAssignmentEditor] = useState<UseCaseAssignment | null>(null);
 
   const handleColumnDrop = (e: React.DragEvent, targetCol: string) => {
     e.preventDefault();
-    const ucId = e.dataTransfer.getData('ucId');
-    const ticketId = e.dataTransfer.getData('ticketId');
+    const assignmentId = e.dataTransfer.getData('assignmentId');
     const sourceCol = e.dataTransfer.getData('sourceCol');
 
-    if ((!ucId && !ticketId) || !targetCol || !sourceCol || targetCol === sourceCol) return;
+    if (!assignmentId || !targetCol || !sourceCol || targetCol === sourceCol) return;
 
     // Find the assignment in the source column and update its status
     const statusMap: Record<string, string> = {
@@ -56,8 +58,7 @@ export default function SprintBoardPage() {
     const newStatus = statusMap[targetCol] || 'À tester';
 
     // Call the API to update the use case status
-    if (ticketId) ticketStatusMutation.mutate({ ticketId, status: newStatus });
-    else statusMutation.mutate({ ucId, status: newStatus });
+    statusMutation.mutate({ assignmentId, status: newStatus });
 
     // Rafraîchit le tableau (le cache est invalidé par la mutation de statut)
     queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
@@ -86,12 +87,12 @@ export default function SprintBoardPage() {
   const { data: members } = useQuery({
     queryKey: queryKeys.projectMembers(slug, projectSlug),
     queryFn: () => teamsApi.listProjectMembers(slug!, projectSlug!),
-    enabled: !!slug && !!projectSlug && (showAssignModal || !!ticketEditor),
+    enabled: !!slug && !!projectSlug && (showAssignModal || !!ticketEditor || !!assignmentEditor),
   });
 
   const { data: unassigned } = useQuery({
-    queryKey: queryKeys.unassignedUcs(slug, projectSlug),
-    queryFn: () => teamsApi.getUnassignedUseCases(slug!, projectSlug!),
+    queryKey: queryKeys.unassignedUcs(slug, projectSlug, selectedSprint),
+    queryFn: () => teamsApi.getUnassignedUseCases(slug!, projectSlug!, selectedSprint || undefined),
     enabled: !!slug && !!projectSlug && showAssignModal,
   });
 
@@ -123,23 +124,23 @@ export default function SprintBoardPage() {
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedUcs(slug, projectSlug) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedUcs(slug, projectSlug, selectedSprint) });
       setShowAssignModal(false);
       setAssignData({ use_case_ids: [], user_id: 0 });
     },
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ ucId, status }: { ucId: string; status: string }) =>
-      teamsApi.updateUseCaseStatus(slug!, projectSlug!, ucId, status),
+    mutationFn: ({ assignmentId, status }: { assignmentId: string; status: string }) =>
+      teamsApi.updateSprintCase(slug!, projectSlug!, assignmentId, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
     },
   });
 
   const jiraTicketMutation = useMutation({
-    mutationFn: ({ ucId, jiraTicket }: { ucId: string; jiraTicket: string }) =>
-      teamsApi.updateUseCaseJiraTicket(slug!, projectSlug!, ucId, jiraTicket),
+    mutationFn: ({ assignmentId, jiraTicket }: { assignmentId: string; jiraTicket: string }) =>
+      teamsApi.updateSprintCase(slug!, projectSlug!, assignmentId, { jira_ticket: jiraTicket }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
       queryClient.invalidateQueries({ queryKey: queryKeys.ucDetail(slug, projectSlug, detailAssignmentId) });
@@ -176,18 +177,21 @@ export default function SprintBoardPage() {
   });
 
   const saveTicketMutation = useMutation({
-    mutationFn: (ticket: Partial<SprintTicket>) => ticket.id
-      ? teamsApi.updateSprintTicket(slug!, projectSlug!, selectedSprint as string, ticket.id, ticket)
-      : teamsApi.createSprintTicket(slug!, projectSlug!, selectedSprint as string, ticket),
+    mutationFn: (data: SprintCaseDraft) => teamsApi.createSprintCase(slug!, projectSlug!, selectedSprint as string, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }); setTicketEditor(null); },
   });
-  const deleteTicketMutation = useMutation({
-    mutationFn: (ticketId: string) => teamsApi.deleteSprintTicket(slug!, projectSlug!, selectedSprint as string, ticketId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }),
+  const saveAssignmentMutation = useMutation({
+    mutationFn: (assignment: UseCaseAssignment) => teamsApi.updateSprintCase(slug!, projectSlug!, assignment.id, {
+      use_case_text: assignment.use_case_text, jira_ticket: assignment.jira_ticket,
+      description: assignment.description, preconditions: assignment.preconditions,
+      steps: assignment.steps, expected_results: assignment.expected_results,
+      observed_results: assignment.observed_results, status: assignment.status,
+      assigned_to: assignment.assigned_to,
+    }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }); setAssignmentEditor(null); },
   });
-  const ticketStatusMutation = useMutation({
-    mutationFn: ({ ticketId, status }: { ticketId: string; status: string }) =>
-      teamsApi.updateSprintTicket(slug!, projectSlug!, selectedSprint as string, ticketId, { status }),
+  const deleteAssignmentMutation = useMutation({
+    mutationFn: (assignmentId: string) => teamsApi.deleteAssignment(slug!, projectSlug!, assignmentId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }),
   });
 
@@ -213,7 +217,6 @@ export default function SprintBoardPage() {
             <>
               <Button variant="secondary" size="sm" onClick={() => setShowCreateModal(true)}>+ Nouveau sprint</Button>
               <Button size="sm" onClick={() => setShowAssignModal(true)} disabled={!selectedSprint}>+ Assigner des cas</Button>
-              <Button size="sm" variant="secondary" onClick={() => setTicketEditor({ title: '', description: '', status: 'À tester', priority: 'medium', assigned_to: null })} disabled={!selectedSprint}>+ Créer un cas / ticket</Button>
             </>
           )}
         </div>
@@ -276,7 +279,7 @@ export default function SprintBoardPage() {
       )}
 
       {!!selectedSprint && <div className="flex justify-between items-center gap-3 mb-3"><p className="text-body-sm text-on-surface-variant">Les tickets sont intégrés aux colonnes du sprint. Glissez une carte pour changer son statut.</p><input type="search" aria-label="Rechercher un ticket par numéro" placeholder="Rechercher par numéro de ticket" value={ticketQuery} onChange={e => setTicketQuery(e.target.value)} className="w-full sm:w-80 border border-outline-variant rounded-lg px-3 py-2 bg-surface text-on-surface" /></div>}
-      {(saveTicketMutation.isError || deleteTicketMutation.isError || ticketStatusMutation.isError) && <p role="alert" className="mb-3 text-error">{getApiErrorMessage(saveTicketMutation.error || deleteTicketMutation.error || ticketStatusMutation.error, 'Échec de l’opération sur le ticket.')}</p>}
+      {(saveTicketMutation.isError || saveAssignmentMutation.isError || deleteAssignmentMutation.isError || statusMutation.isError) && <p role="alert" className="mb-3 text-error">{getApiErrorMessage(saveTicketMutation.error || saveAssignmentMutation.error || deleteAssignmentMutation.error || statusMutation.error, 'Échec de l’opération sur le cas.')}</p>}
 
       {boardLoading ? (
         <div className="animate-pulse grid grid-cols-5 gap-4">
@@ -288,12 +291,13 @@ export default function SprintBoardPage() {
             <div key={col} className="bg-surface-container-low rounded-xl p-3 min-h-[400px]" onDrop={(e) => handleColumnDrop(e, col)} onDragOver={(e) => e.preventDefault()}>
               <div className="flex items-center justify-between mb-3 px-1">
                 <h3 className="text-label-md font-bold text-on-surface">{col}</h3>
+                {canManage && <button type="button" aria-label={`Créer un cas dans ${col}`} onClick={() => setTicketEditor({ use_case_text: '', jira_ticket: '', description: '', preconditions: '', steps: '', expected_results: '', observed_results: '', status: col, assigned_to: null, comment: '' })} className="text-primary text-label-sm hover:underline">+ Créer</button>}
                 <span className="text-body-sm text-on-surface-variant font-mono">
-                  {(board.columns[col]?.length || 0) + (board.tickets?.filter(t => t.status === col).length || 0)}
+                  {(board.columns[col]?.length || 0)}
                 </span>
               </div>
               <div className="space-y-2">
-                {(board.columns[col] || []).map((assignment) => {
+                {(board.columns[col] || []).filter(a => !ticketQuery.trim() || `${a.ticket_number} CAS-${String(a.case_number).padStart(3, '0')} ${a.use_case_text} ${a.jira_ticket || ''}`.toLowerCase().includes(ticketQuery.trim().toLowerCase())).map((assignment) => {
                   const statusColorMap: Record<string, string> = {
                     'À tester': 'bg-outline-variant text-on-surface-variant',
                     'En cours': 'bg-primary text-white',
@@ -306,14 +310,14 @@ return (
                      onClick={(e) => { e.stopPropagation(); setDetailAssignmentId(assignment.id); }}
                      draggable={true}
                      onDragStart={(e) => {
-                       e.dataTransfer.setData('ucId', assignment.use_case);
+                       e.dataTransfer.setData('assignmentId', assignment.id);
                        e.dataTransfer.setData('sourceCol', col);
                        e.dataTransfer.effectAllowed = 'move';
                      }}
                      onDragOver={(e) => e.preventDefault()}>
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <span className="text-label-sm font-bold text-primary shrink-0">
-                        CAS-{String(assignment.use_case_order).padStart(3, '0')}
+                        CAS-{String(assignment.case_number).padStart(3, '0')}
                       </span>
                       <span className={`px-1.5 py-0.5 rounded text-[0.625rem] font-bold uppercase tracking-wider shrink-0 ${statusColorMap[assignment.status] || 'bg-outline-variant text-on-surface-variant'}`}>
                         {assignment.status}
@@ -349,7 +353,8 @@ return (
                         {canManage && (
                           <select
                             value={assignment.status}
-                            onChange={(e) => { e.stopPropagation(); statusMutation.mutate({ ucId: assignment.use_case, status: e.target.value }); }}
+                            onClick={e => e.stopPropagation()}
+                            onChange={(e) => { e.stopPropagation(); statusMutation.mutate({ assignmentId: assignment.id, status: e.target.value }); }}
                             className="text-[0.6rem] bg-transparent border border-outline-variant rounded px-1 py-0.5"
                           >
                             {STATUS_COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -357,18 +362,13 @@ return (
                         )}
                       </div>
                     </div>
+                    {canManage && <div className="flex gap-2 mt-2">
+                      <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setAssignmentEditor({ ...assignment }); }}>Modifier</Button>
+                      <Button size="sm" variant="secondary" disabled={deleteAssignmentMutation.isPending} onClick={e => { e.stopPropagation(); if (window.confirm(`Supprimer CAS-${String(assignment.case_number).padStart(3, '0')} de la recette et de tous les sprints ?`)) deleteAssignmentMutation.mutate(assignment.id); }}>Supprimer</Button>
+                    </div>}
                   </div>
                 );})}
-                {(board.tickets || []).filter(t => t.status === col && (!ticketQuery.trim() || t.ticket_number.toLowerCase().includes(ticketQuery.trim().toLowerCase()))).map(ticket => (
-                  <div key={ticket.id} className="bg-surface border border-primary/30 rounded-lg p-3 cursor-grab" draggable={canManage} onDragStart={e => { e.dataTransfer.setData('ticketId', ticket.id); e.dataTransfer.setData('sourceCol', col); e.dataTransfer.effectAllowed = 'move'; }}>
-                    <div className="flex items-start justify-between gap-2"><span className="font-mono text-label-sm font-bold text-primary">{ticket.ticket_number}</span><Badge variant={ticket.priority === 'high' ? 'error' : ticket.priority === 'low' ? 'default' : 'info'}>{ticket.priority}</Badge></div>
-                    <p className="text-body-sm font-semibold text-on-surface mt-2">{ticket.title}</p>
-                    {ticket.description && <p className="text-body-xs text-on-surface-variant line-clamp-2 mt-1">{ticket.description}</p>}
-                    <p className="text-body-xs text-on-surface-variant mt-2">{ticket.assigned_to_user?.full_name || 'Non assigné'}</p>
-                    {canManage && <div className="flex gap-2 mt-2"><Button size="sm" variant="secondary" onClick={() => setTicketEditor({ ...ticket })}>Modifier</Button><Button size="sm" variant="secondary" disabled={deleteTicketMutation.isPending} onClick={() => { if (window.confirm(`Supprimer ${ticket.ticket_number} ?`)) deleteTicketMutation.mutate(ticket.id); }}>Supprimer</Button></div>}
-                  </div>
-                ))}
-                {(!board.columns[col] || board.columns[col].length === 0) && !(board.tickets || []).some(t => t.status === col && (!ticketQuery.trim() || t.ticket_number.toLowerCase().includes(ticketQuery.trim().toLowerCase()))) && (
+                {!(board.columns[col] || []).some(a => !ticketQuery.trim() || `${a.ticket_number} CAS-${String(a.case_number).padStart(3, '0')} ${a.use_case_text} ${a.jira_ticket || ''}`.toLowerCase().includes(ticketQuery.trim().toLowerCase())) && (
                   <div className="text-center py-8 text-body-sm text-on-surface-variant italic">
                     Aucun cas
                   </div>
@@ -457,7 +457,7 @@ return (
                            if (e.target.checked) setAssignData(p => ({ ...p, use_case_ids: [...p.use_case_ids, uc.id] }));
                            else setAssignData(p => ({ ...p, use_case_ids: p.use_case_ids.filter(id => id !== uc.id) }));
                          }} />
-                  <span className="text-body-sm text-on-surface">UC#{uc.order}</span>
+                  <span className="text-body-sm text-on-surface">CAS-{String(uc.case_number).padStart(3, '0')}</span>
                   <span className="text-body-sm text-on-surface-variant truncate">{uc.use_case_text || uc.description}</span>
                 </label>
               ))}
@@ -474,17 +474,41 @@ return (
         </div>
       </Modal>
 
-      <Modal open={!!ticketEditor} onClose={() => setTicketEditor(null)} labelledBy="ticket-editor-title" maxWidth="max-w-xl" className="p-7">
-        <h3 id="ticket-editor-title" className="text-headline-sm font-bold text-on-surface mb-4">{ticketEditor?.id ? `Modifier ${ticketEditor.ticket_number}` : 'Créer un cas / ticket'}</h3>
+      <Modal open={!!ticketEditor} onClose={() => setTicketEditor(null)} labelledBy="ticket-editor-title" maxWidth="max-w-2xl" className="p-7">
+        <h3 id="ticket-editor-title" className="text-headline-sm font-bold text-on-surface mb-4">Créer un cas commun</h3>
         {ticketEditor && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto pr-1">
-          <label className="text-label-md md:col-span-2">Titre *<input value={ticketEditor.title ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, title: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <p className="text-label-md md:col-span-2 text-primary font-mono">Le numéro CAS sera attribué automatiquement et sera identique dans la recette et les sprints.</p>
+          <label className="text-label-md md:col-span-2">Use Case (titre) *<input value={ticketEditor.use_case_text} onChange={e => setTicketEditor(t => t && ({ ...t, use_case_text: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md">Ticket Jira<input value={ticketEditor.jira_ticket ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, jira_ticket: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md md:col-span-2">Description<textarea value={ticketEditor.description ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, description: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Préconditions<textarea value={ticketEditor.preconditions ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, preconditions: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Étapes<textarea value={ticketEditor.steps ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, steps: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Résultats attendus<textarea value={ticketEditor.expected_results ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, expected_results: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Résultats observés<textarea value={ticketEditor.observed_results ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, observed_results: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Commentaire initial<textarea value={ticketEditor.comment} onChange={e => setTicketEditor(t => t && ({ ...t, comment: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md">Statut Kanban<select value={ticketEditor.status ?? 'À tester'} onChange={e => setTicketEditor(t => t && ({ ...t, status: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{STATUS_COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}</select></label>
-          <label className="text-label-md">Priorité<select value={ticketEditor.priority ?? 'medium'} onChange={e => setTicketEditor(t => t && ({ ...t, priority: e.target.value as SprintTicket['priority'] }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{[['high','Haute'],['medium','Moyenne'],['low','Basse']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
           <label className="text-label-md">Assigné à<select value={ticketEditor.assigned_to ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, assigned_to: e.target.value || null }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{members?.results?.map(m => <option key={m.id} value={m.id}>{m.user.full_name}</option>)}</select></label>
         </div>}
         {saveTicketMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(saveTicketMutation.error, 'Enregistrement impossible.')}</p>}
-        <div className="flex justify-end gap-3 mt-5"><Button variant="secondary" onClick={() => setTicketEditor(null)}>Annuler</Button><Button disabled={!canManage || !ticketEditor?.title?.trim() || saveTicketMutation.isPending} onClick={() => ticketEditor && saveTicketMutation.mutate(ticketEditor)}>{saveTicketMutation.isPending ? 'Enregistrement…' : 'Enregistrer le ticket'}</Button></div>
+        <div className="flex justify-end gap-3 mt-5"><Button variant="secondary" onClick={() => setTicketEditor(null)}>Annuler</Button><Button disabled={!canManage || !ticketEditor?.use_case_text.trim() || saveTicketMutation.isPending} onClick={() => ticketEditor && saveTicketMutation.mutate(ticketEditor)}>{saveTicketMutation.isPending ? 'Enregistrement…' : 'Enregistrer le cas'}</Button></div>
+      </Modal>
+
+      <Modal open={!!assignmentEditor} onClose={() => setAssignmentEditor(null)} labelledBy="imported-case-editor-title" maxWidth="max-w-2xl" className="p-7">
+        <h3 id="imported-case-editor-title" className="text-headline-sm font-bold text-on-surface mb-4">Modifier le cas</h3>
+        {assignmentEditor && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto pr-1">
+          <p className="text-label-md md:col-span-2 text-primary font-mono">CAS-{String(assignmentEditor.case_number).padStart(3, '0')}</p>
+          <label className="text-label-md md:col-span-2">Use Case (titre)<input value={assignmentEditor.use_case_text || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, use_case_text: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md">Ticket Jira<input value={assignmentEditor.jira_ticket || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, jira_ticket: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md">Statut<select value={assignmentEditor.status} onChange={e => setAssignmentEditor(a => a && ({ ...a, status: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{STATUS_COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}</select></label>
+          <label className="text-label-md md:col-span-2">Description<textarea value={assignmentEditor.description || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, description: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Préconditions<textarea value={assignmentEditor.preconditions || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, preconditions: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Étapes<textarea value={assignmentEditor.steps || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, steps: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Résultats attendus<textarea value={assignmentEditor.expected_results || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, expected_results: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Résultats observés<textarea value={assignmentEditor.observed_results || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, observed_results: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md md:col-span-2">Assigné à<select value={assignmentEditor.assigned_to || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, assigned_to: e.target.value || null }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{members?.results?.map(m => <option key={m.id} value={m.id}>{m.user.full_name}</option>)}</select></label>
+        </div>}
+        {saveAssignmentMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(saveAssignmentMutation.error, 'Modification impossible.')}</p>}
+        <div className="flex justify-end gap-3 mt-5"><Button variant="secondary" onClick={() => setAssignmentEditor(null)}>Annuler</Button><Button disabled={!canManage || saveAssignmentMutation.isPending} onClick={() => assignmentEditor && saveAssignmentMutation.mutate(assignmentEditor)}>{saveAssignmentMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}</Button></div>
       </Modal>
 
       {detailAssignmentId && selectedAssignment && (
@@ -503,7 +527,7 @@ return (
             commentMutation.mutate({ ucId: selectedAssignment.use_case, content })
           }
           onSaveJira={(value) =>
-            jiraTicketMutation.mutate({ ucId: selectedAssignment.use_case, jiraTicket: value })
+            jiraTicketMutation.mutate({ assignmentId: selectedAssignment.id, jiraTicket: value })
           }
           isSavingJira={jiraTicketMutation.isPending}
           ucComment={ucComment}
@@ -557,9 +581,9 @@ function UseCaseDetailModal({
   };
 
   const uc = detail?.use_case;
-  const order = uc?.order ?? assignment.use_case_order;
-  const ucKey = uc?.use_case_text ?? assignment.use_case_id_str;
-  const ucDesc = uc?.description ?? assignment.use_case_desc;
+  const order = assignment.case_number;
+  const ucKey = assignment.use_case_text || uc?.use_case_text || assignment.use_case_id_str;
+  const ucDesc = assignment.description || uc?.description || assignment.use_case_desc;
   const screenshots = detail?.screenshots ?? [];
   const comments = detail?.comments ?? [];
   const loaded = !!uc;
@@ -575,7 +599,7 @@ function UseCaseDetailModal({
     >
         <div className="sticky top-0 bg-surface z-10 flex items-center justify-between p-4 pb-3 border-b border-outline-variant">
           <h3 id={`uc-detail-modal-${order}`} className="text-headline-sm font-bold text-on-surface">
-            UC#{order} — Détails
+            CAS-{String(order).padStart(3, '0')} — Détails
           </h3>
           <button onClick={onClose} aria-label="Fermer" className="w-11 h-11 rounded-lg hover:bg-surface-container-low flex items-center justify-center text-on-surface-variant cursor-pointer">✕</button>
         </div>
@@ -609,7 +633,7 @@ function UseCaseDetailModal({
           </div>
 
           <div>
-            <label className="text-label-md text-on-surface-variant block mb-1">Use Case ID</label>
+            <label className="text-label-md text-on-surface-variant block mb-1">Use Case (titre)</label>
             <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2">{ucKey || '—'}</p>
           </div>
 
@@ -638,22 +662,22 @@ function UseCaseDetailModal({
           <>
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Préconditions</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc?.preconditions || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{assignment.preconditions || uc?.preconditions || '—'}</p>
           </div>
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Étapes</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc?.steps || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{assignment.steps || uc?.steps || '—'}</p>
           </div>
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Résultats attendus</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc?.expected_results || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{assignment.expected_results || uc?.expected_results || '—'}</p>
           </div>
 
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Résultats observés</label>
-            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{uc?.observed_results || '—'}</p>
+            <p className="text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 whitespace-pre-wrap">{assignment.observed_results || uc?.observed_results || '—'}</p>
           </div>
 
           <div>
