@@ -10,6 +10,7 @@ const mockUser = { id: 1, username: 'lead', email: 'lead@test.com', full_name: '
 
 const { mockTeamsApi, mockNavigate } = vi.hoisted(() => ({
   mockTeamsApi: {
+    getTeam: vi.fn(),
     listSprints: vi.fn(),
     getSprintBoard: vi.fn(),
     listProjectMembers: vi.fn(),
@@ -18,6 +19,9 @@ const { mockTeamsApi, mockNavigate } = vi.hoisted(() => ({
     createAssignments: vi.fn(),
     updateUseCaseStatus: vi.fn(),
     getUseCaseDetail: vi.fn(),
+    createSprintTicket: vi.fn(),
+    updateSprintTicket: vi.fn(),
+    deleteSprintTicket: vi.fn(),
   },
   mockNavigate: vi.fn(),
 }));
@@ -51,6 +55,7 @@ const mockBoard = {
     'Bloqué': [],
   },
   stats: mockSprints.results[0].stats,
+  tickets: [],
 };
 
 function renderPage(initialRoute = '/teams/qa-team/projects/qa-project/sprint-board') {
@@ -72,6 +77,7 @@ function renderPage(initialRoute = '/teams/qa-team/projects/qa-project/sprint-bo
 describe('SprintBoardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTeamsApi.getTeam.mockResolvedValue({ id: 't1', name: 'QA Team', slug: 'qa-team', my_role: 'admin' });
     mockTeamsApi.listSprints.mockResolvedValue(mockSprints);
     mockTeamsApi.getSprintBoard.mockResolvedValue(mockBoard);
     mockTeamsApi.listProjectMembers.mockResolvedValue({ count: 2, results: [{ id: 'pm1', user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, role: 'tester', added_at: '' }] });
@@ -107,6 +113,18 @@ describe('SprintBoardPage', () => {
       const bloque = screen.getAllByText('Bloqué');
       expect(bloque.length).toBeGreaterThanOrEqual(1);
     });
+  });
+
+  it('creates a standalone ticket in the selected sprint', async () => {
+    const user = userEvent.setup();
+    mockTeamsApi.createSprintTicket.mockResolvedValue({ id: 'ticket-1', ticket_number: 'TKT-ABCD1234' });
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('+ Créer un cas / ticket'));
+    await user.type(screen.getByLabelText('Titre *'), 'Connexion utilisateur');
+    await user.click(screen.getByText('Enregistrer le ticket'));
+    await waitFor(() => expect(mockTeamsApi.createSprintTicket).toHaveBeenCalledWith(
+      'qa-team', 'qa-project', 's1', expect.objectContaining({ title: 'Connexion utilisateur', status: 'À tester' }),
+    ));
   });
 
   it('renders use cases in correct columns', async () => {

@@ -21,6 +21,7 @@ export const queryKeys = {
 
   // ── Équipes & projets ─────────────────────────────────────────────────────
   teams: ['teams'] as const,
+  team: (teamSlug?: string) => ['team', teamSlug] as const,
   teamMembers: (teamSlug?: string) => ['team-members', teamSlug] as const,
   dashboard: (teamSlug?: string) => ['dashboard', teamSlug] as const,
   projects: (teamSlug?: string, page?: number) => ['projects', teamSlug, page ?? 1] as const,

@@ -7,8 +7,10 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, ProjectMember, Defect } from '../types';
+import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, ProjectMember, SprintTicket } from '../types';
 import { queryKeys } from '../lib/queryKeys';
+import { useAuth } from '../context/AuthContext';
+import { getApiErrorMessage } from '../lib/errors';
 
 const STATUS_COLUMNS = ['À tester', 'En cours', 'Passé', 'Échoué', 'Bloqué'];
 const STATUS_COLORS: Record<string, string> = {
@@ -23,6 +25,7 @@ export default function SprintBoardPage() {
   const { slug, projectSlug, sprintId } = useParams<{ slug: string; projectSlug: string; sprintId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedSprint, setSelectedSprint] = useState<string | ''>(sprintId || '');
@@ -31,14 +34,15 @@ export default function SprintBoardPage() {
   const [detailAssignmentId, setDetailAssignmentId] = useState<string | null>(null);
   const [ucComment, setUcComment] = useState('');
   const [ticketQuery, setTicketQuery] = useState('');
-  const [ticketEditor, setTicketEditor] = useState<Partial<Defect> | null>(null);
+  const [ticketEditor, setTicketEditor] = useState<Partial<SprintTicket> | null>(null);
 
   const handleColumnDrop = (e: React.DragEvent, targetCol: string) => {
     e.preventDefault();
     const ucId = e.dataTransfer.getData('ucId');
+    const ticketId = e.dataTransfer.getData('ticketId');
     const sourceCol = e.dataTransfer.getData('sourceCol');
 
-    if (!ucId || !targetCol || !sourceCol || targetCol === sourceCol) return;
+    if ((!ucId && !ticketId) || !targetCol || !sourceCol || targetCol === sourceCol) return;
 
     // Find the assignment in the source column and update its status
     const statusMap: Record<string, string> = {
@@ -52,14 +56,20 @@ export default function SprintBoardPage() {
     const newStatus = statusMap[targetCol] || 'À tester';
 
     // Call the API to update the use case status
-    statusMutation.mutate({ ucId, status: newStatus });
+    if (ticketId) ticketStatusMutation.mutate({ ticketId, status: newStatus });
+    else statusMutation.mutate({ ucId, status: newStatus });
 
     // Rafraîchit le tableau (le cache est invalidé par la mutation de statut)
     queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
   };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canManage = true;
+  const { data: currentTeam } = useQuery({
+    queryKey: queryKeys.team(slug),
+    queryFn: () => teamsApi.getTeam(slug!),
+    enabled: !!slug,
+  });
+  const canManage = currentTeam?.my_role === 'owner' || currentTeam?.my_role === 'admin';
 
   const { data: sprints } = useQuery({
     queryKey: queryKeys.sprints(slug, projectSlug),
@@ -166,24 +176,22 @@ export default function SprintBoardPage() {
   });
 
   const saveTicketMutation = useMutation({
-    mutationFn: (ticket: Partial<Defect>) => ticket.id
-      ? teamsApi.updateDefect(slug!, projectSlug!, ticket.id, ticket as Record<string, unknown>)
-      : teamsApi.createDefect(slug!, projectSlug!, { ...ticket, sprint: selectedSprint }),
+    mutationFn: (ticket: Partial<SprintTicket>) => ticket.id
+      ? teamsApi.updateSprintTicket(slug!, projectSlug!, selectedSprint as string, ticket.id, ticket)
+      : teamsApi.createSprintTicket(slug!, projectSlug!, selectedSprint as string, ticket),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }); setTicketEditor(null); },
   });
   const deleteTicketMutation = useMutation({
-    mutationFn: (ticketId: string) => teamsApi.deleteDefect(slug!, projectSlug!, ticketId),
+    mutationFn: (ticketId: string) => teamsApi.deleteSprintTicket(slug!, projectSlug!, selectedSprint as string, ticketId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }),
+  });
+  const ticketStatusMutation = useMutation({
+    mutationFn: ({ ticketId, status }: { ticketId: string; status: string }) =>
+      teamsApi.updateSprintTicket(slug!, projectSlug!, selectedSprint as string, ticketId, { status }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }),
   });
 
   const currentSprint = sprints?.results?.find(s => s.id === selectedSprint);
-
-  const currentUser = (() => {
-    try {
-      const el = document.getElementById('__AUTH_USER__');
-      return el ? JSON.parse(el.textContent || '{}') : null;
-    } catch { return null; }
-  })();
 
   return (
     <PageLayout>
@@ -201,11 +209,11 @@ export default function SprintBoardPage() {
               Exporter CSV
             </Button>
           )}
-          {canManage && (
+        {canManage && (
             <>
               <Button variant="secondary" size="sm" onClick={() => setShowCreateModal(true)}>+ Nouveau sprint</Button>
               <Button size="sm" onClick={() => setShowAssignModal(true)} disabled={!selectedSprint}>+ Assigner des cas</Button>
-              <Button size="sm" variant="secondary" onClick={() => setTicketEditor({ title: '', description: '', status: 'open', priority: 'medium', severity: 'major', assigned_to: null, steps_to_reproduce: '', expected_behavior: '', actual_behavior: '', environment: '' })} disabled={!selectedSprint}>+ Ticket autonome</Button>
+              <Button size="sm" variant="secondary" onClick={() => setTicketEditor({ title: '', description: '', status: 'À tester', priority: 'medium', assigned_to: null })} disabled={!selectedSprint}>+ Créer un cas / ticket</Button>
             </>
           )}
         </div>
@@ -267,10 +275,8 @@ export default function SprintBoardPage() {
         </Card>
       )}
 
-      {!!selectedSprint && <section className="mb-6" aria-label="Tickets autonomes">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3"><h2 className="text-headline-md font-bold text-on-surface">Tickets du sprint ({board?.tickets?.length ?? 0})</h2><input type="search" aria-label="Rechercher un ticket par numéro" placeholder="Rechercher par numéro (ex. TKT-AB12CD34)" value={ticketQuery} onChange={e => setTicketQuery(e.target.value)} className="border border-outline-variant rounded-lg px-3 py-2 bg-surface text-on-surface" /></div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{(board?.tickets ?? []).filter(t => !ticketQuery.trim() || t.ticket_number.toLowerCase().includes(ticketQuery.trim().toLowerCase())).map(ticket => <Card key={ticket.id} className="p-4"><div className="flex justify-between gap-2"><strong className="font-mono text-primary">{ticket.ticket_number}</strong><Badge>{ticket.status}</Badge></div><p className="font-semibold mt-2">{ticket.title}</p><p className="text-body-sm text-on-surface-variant line-clamp-2 mt-1">{ticket.description}</p><div className="flex gap-2 mt-3"><Button size="sm" variant="secondary" onClick={() => setTicketEditor({ ...ticket })}>Modifier</Button><Button size="sm" variant="secondary" disabled={deleteTicketMutation.isPending} onClick={() => { if (window.confirm(`Supprimer ${ticket.ticket_number} ?`)) deleteTicketMutation.mutate(ticket.id); }}>Supprimer</Button></div></Card>)}{ticketQuery && (board?.tickets ?? []).filter(t => t.ticket_number.toLowerCase().includes(ticketQuery.trim().toLowerCase())).length === 0 && <p className="text-body-sm text-on-surface-variant">Aucun ticket ne correspond à ce numéro dans ce sprint.</p>}</div>
-      </section>}
+      {!!selectedSprint && <div className="flex justify-between items-center gap-3 mb-3"><p className="text-body-sm text-on-surface-variant">Les tickets sont intégrés aux colonnes du sprint. Glissez une carte pour changer son statut.</p><input type="search" aria-label="Rechercher un ticket par numéro" placeholder="Rechercher par numéro de ticket" value={ticketQuery} onChange={e => setTicketQuery(e.target.value)} className="w-full sm:w-80 border border-outline-variant rounded-lg px-3 py-2 bg-surface text-on-surface" /></div>}
+      {(saveTicketMutation.isError || deleteTicketMutation.isError || ticketStatusMutation.isError) && <p role="alert" className="mb-3 text-error">{getApiErrorMessage(saveTicketMutation.error || deleteTicketMutation.error || ticketStatusMutation.error, 'Échec de l’opération sur le ticket.')}</p>}
 
       {boardLoading ? (
         <div className="animate-pulse grid grid-cols-5 gap-4">
@@ -283,7 +289,7 @@ export default function SprintBoardPage() {
               <div className="flex items-center justify-between mb-3 px-1">
                 <h3 className="text-label-md font-bold text-on-surface">{col}</h3>
                 <span className="text-body-sm text-on-surface-variant font-mono">
-                  {board.columns[col]?.length || 0}
+                  {(board.columns[col]?.length || 0) + (board.tickets?.filter(t => t.status === col).length || 0)}
                 </span>
               </div>
               <div className="space-y-2">
@@ -353,7 +359,16 @@ return (
                     </div>
                   </div>
                 );})}
-                {(!board.columns[col] || board.columns[col].length === 0) && (
+                {(board.tickets || []).filter(t => t.status === col && (!ticketQuery.trim() || t.ticket_number.toLowerCase().includes(ticketQuery.trim().toLowerCase()))).map(ticket => (
+                  <div key={ticket.id} className="bg-surface border border-primary/30 rounded-lg p-3 cursor-grab" draggable={canManage} onDragStart={e => { e.dataTransfer.setData('ticketId', ticket.id); e.dataTransfer.setData('sourceCol', col); e.dataTransfer.effectAllowed = 'move'; }}>
+                    <div className="flex items-start justify-between gap-2"><span className="font-mono text-label-sm font-bold text-primary">{ticket.ticket_number}</span><Badge variant={ticket.priority === 'high' ? 'error' : ticket.priority === 'low' ? 'default' : 'info'}>{ticket.priority}</Badge></div>
+                    <p className="text-body-sm font-semibold text-on-surface mt-2">{ticket.title}</p>
+                    {ticket.description && <p className="text-body-xs text-on-surface-variant line-clamp-2 mt-1">{ticket.description}</p>}
+                    <p className="text-body-xs text-on-surface-variant mt-2">{ticket.assigned_to_user?.full_name || 'Non assigné'}</p>
+                    {canManage && <div className="flex gap-2 mt-2"><Button size="sm" variant="secondary" onClick={() => setTicketEditor({ ...ticket })}>Modifier</Button><Button size="sm" variant="secondary" disabled={deleteTicketMutation.isPending} onClick={() => { if (window.confirm(`Supprimer ${ticket.ticket_number} ?`)) deleteTicketMutation.mutate(ticket.id); }}>Supprimer</Button></div>}
+                  </div>
+                ))}
+                {(!board.columns[col] || board.columns[col].length === 0) && !(board.tickets || []).some(t => t.status === col && (!ticketQuery.trim() || t.ticket_number.toLowerCase().includes(ticketQuery.trim().toLowerCase()))) && (
                   <div className="text-center py-8 text-body-sm text-on-surface-variant italic">
                     Aucun cas
                   </div>
@@ -406,7 +421,7 @@ return (
           <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
             Annuler
           </Button>
-          <Button onClick={() => createSprintMutation.mutate()} disabled={!newSprint.name || !newSprint.start_date || !newSprint.end_date || createSprintMutation.isPending}>
+          <Button onClick={() => createSprintMutation.mutate()} disabled={!canManage || !newSprint.name || !newSprint.start_date || !newSprint.end_date || createSprintMutation.isPending}>
             {createSprintMutation.isPending ? '⏳…' : '✅ Créer'}
           </Button>
         </div>
@@ -453,25 +468,23 @@ return (
           <Button variant="secondary" onClick={() => setShowAssignModal(false)}>
             Annuler
           </Button>
-          <Button onClick={() => assignMutation.mutate()} disabled={!assignData.user_id || assignData.use_case_ids.length === 0 || assignMutation.isPending}>
+          <Button onClick={() => assignMutation.mutate()} disabled={!canManage || !assignData.user_id || assignData.use_case_ids.length === 0 || assignMutation.isPending}>
             {assignMutation.isPending ? '⏳…' : `✅ Assigner (${assignData.use_case_ids.length})`}
           </Button>
         </div>
       </Modal>
 
       <Modal open={!!ticketEditor} onClose={() => setTicketEditor(null)} labelledBy="ticket-editor-title" maxWidth="max-w-xl" className="p-7">
-        <h3 id="ticket-editor-title" className="text-headline-sm font-bold text-on-surface mb-4">{ticketEditor?.id ? `Modifier ${ticketEditor.ticket_number}` : 'Créer un ticket autonome'}</h3>
+        <h3 id="ticket-editor-title" className="text-headline-sm font-bold text-on-surface mb-4">{ticketEditor?.id ? `Modifier ${ticketEditor.ticket_number}` : 'Créer un cas / ticket'}</h3>
         {ticketEditor && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto pr-1">
           <label className="text-label-md md:col-span-2">Titre *<input value={ticketEditor.title ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, title: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md md:col-span-2">Description<textarea value={ticketEditor.description ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, description: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
-          <label className="text-label-md">Statut<select value={ticketEditor.status ?? 'open'} onChange={e => setTicketEditor(t => t && ({ ...t, status: e.target.value as Defect['status'] }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{[['open','Ouvert'],['in_progress','En cours'],['resolved','Résolu'],['closed','Fermé'],['reopened','Réouvert']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-          <label className="text-label-md">Priorité<select value={ticketEditor.priority ?? 'medium'} onChange={e => setTicketEditor(t => t && ({ ...t, priority: e.target.value as Defect['priority'] }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{[['high','Haute'],['medium','Moyenne'],['low','Basse']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-          <label className="text-label-md">Sévérité<select value={ticketEditor.severity ?? 'major'} onChange={e => setTicketEditor(t => t && ({ ...t, severity: e.target.value as Defect['severity'] }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{[['critical','Critique'],['major','Majeure'],['minor','Mineure'],['trivial','Triviale']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-          <label className="text-label-md">Assigné à<select value={ticketEditor.assigned_to ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, assigned_to: e.target.value ? Number(e.target.value) : null }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{members?.results?.map(m => <option key={m.user.id} value={m.user.id}>{m.user.full_name}</option>)}</select></label>
-          {(['steps_to_reproduce','expected_behavior','actual_behavior','environment'] as const).map(key => <label key={key} className="text-label-md">{{steps_to_reproduce:'Étapes',expected_behavior:'Résultat attendu',actual_behavior:'Résultat observé',environment:'Environnement'}[key]}<textarea value={ticketEditor[key] ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, [key]: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>)}
+          <label className="text-label-md">Statut Kanban<select value={ticketEditor.status ?? 'À tester'} onChange={e => setTicketEditor(t => t && ({ ...t, status: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{STATUS_COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}</select></label>
+          <label className="text-label-md">Priorité<select value={ticketEditor.priority ?? 'medium'} onChange={e => setTicketEditor(t => t && ({ ...t, priority: e.target.value as SprintTicket['priority'] }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{[['high','Haute'],['medium','Moyenne'],['low','Basse']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+          <label className="text-label-md">Assigné à<select value={ticketEditor.assigned_to ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, assigned_to: e.target.value || null }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{members?.results?.map(m => <option key={m.id} value={m.id}>{m.user.full_name}</option>)}</select></label>
         </div>}
-        {saveTicketMutation.isError && <p role="alert" className="text-error mt-3">{String(saveTicketMutation.error instanceof Error ? saveTicketMutation.error.message : 'Enregistrement impossible')}</p>}
-        <div className="flex justify-end gap-3 mt-5"><Button variant="secondary" onClick={() => setTicketEditor(null)}>Annuler</Button><Button disabled={!ticketEditor?.title?.trim() || saveTicketMutation.isPending} onClick={() => ticketEditor && saveTicketMutation.mutate(ticketEditor)}>{saveTicketMutation.isPending ? 'Enregistrement…' : 'Enregistrer le ticket'}</Button></div>
+        {saveTicketMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(saveTicketMutation.error, 'Enregistrement impossible.')}</p>}
+        <div className="flex justify-end gap-3 mt-5"><Button variant="secondary" onClick={() => setTicketEditor(null)}>Annuler</Button><Button disabled={!canManage || !ticketEditor?.title?.trim() || saveTicketMutation.isPending} onClick={() => ticketEditor && saveTicketMutation.mutate(ticketEditor)}>{saveTicketMutation.isPending ? 'Enregistrement…' : 'Enregistrer le ticket'}</Button></div>
       </Modal>
 
       {detailAssignmentId && selectedAssignment && (
