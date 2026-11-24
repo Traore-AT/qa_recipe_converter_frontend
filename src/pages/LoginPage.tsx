@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { Button } from '../components/ui/Button';
@@ -18,8 +18,7 @@ export default function LoginPage() {
 
   if (authLoading) return null;
   if (user) {
-    navigate(searchParams.get('next') || '/', { replace: true });
-    return null;
+    return <Navigate to={searchParams.get('next') || '/'} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

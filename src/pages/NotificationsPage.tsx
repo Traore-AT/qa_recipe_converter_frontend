@@ -69,12 +69,12 @@ export default function NotificationsPage() {
             <Card key={notification.id} className={`p-4 ${notification.is_read ? 'opacity-75' : 'border-l-4 border-l-primary'}`}>
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-semibold text-sm shrink-0">
-                  {(notification.actor.full_name || notification.actor.username).charAt(0).toUpperCase()}
+                  {(notification.actor?.full_name || notification.actor?.username || 'Système').charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-body-sm font-semibold text-on-surface">
-                      {notification.actor.full_name || notification.actor.username}
+                      {notification.actor?.full_name || notification.actor?.username || 'Système'}
                     </span>
                     {!notification.is_read && <Badge variant="primary">Nouveau</Badge>}
                     {notification.project && (

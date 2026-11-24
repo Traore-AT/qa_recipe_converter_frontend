@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { Button } from '../components/ui/Button';
@@ -18,8 +18,7 @@ export default function RegisterPage() {
 
   if (authLoading) return null;
   if (user) {
-    navigate(next, { replace: true });
-    return null;
+    return <Navigate to={next} replace />;
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

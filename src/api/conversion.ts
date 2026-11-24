@@ -33,8 +33,8 @@ export const conversionApi = {
       .then((r) => r.data);
   },
 
-  listJobs: (page = 1) =>
-    client.get<PaginatedResponse<ConversionJob>>('/jobs/', { params: { page } }).then((r) => r.data),
+  listJobs: (page = 1, projectId?: string) =>
+    client.get<PaginatedResponse<ConversionJob>>('/jobs/', { params: projectId ? { page, project: projectId } : { page } }).then((r) => r.data),
 
   getJob: (id: string) =>
     client.get<ConversionJob>(`/jobs/${id}/`).then(r => r.data),

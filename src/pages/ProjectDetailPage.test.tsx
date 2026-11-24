@@ -7,7 +7,7 @@ import { ThemeProvider } from '../context/ThemeContext';
 import ProjectDetailPage from './ProjectDetailPage';
 
 const { mockTeamsApi, mockConversionApi, mockNavigate } = vi.hoisted(() => ({
-  mockTeamsApi: { getProject: vi.fn(), listProjectMembers: vi.fn(), getProjectProgress: vi.fn(), listMembers: vi.fn(), addProjectMember: vi.fn(), removeProjectMember: vi.fn(), downloadDailyScrum: vi.fn(), downloadWeeklyReport: vi.fn() },
+  mockTeamsApi: { getProject: vi.fn(), listProjectMembers: vi.fn(), getProjectProgress: vi.fn(), listMembers: vi.fn(), addProjectMember: vi.fn(), removeProjectMember: vi.fn(), downloadDailyScrum: vi.fn(), downloadWeeklyReport: vi.fn(), listSprints: vi.fn(), updateSprint: vi.fn(), downloadProjectReport: vi.fn(), getProjectPerformance: vi.fn(), getProjectEvolution: vi.fn() },
   mockConversionApi: { listJobs: vi.fn() },
   mockNavigate: vi.fn(),
 }));
@@ -34,7 +34,7 @@ const mockProject = {
   created_by: { id: 1, full_name: 'Test User', username: 'testuser', email: 'test@example.com', date_joined: '2025-01-01' },
   avatar_url: null,
   stats: { total: 25, passed: 20, failed: 3, blocked: 1, not_run: 1, automated: 8, success_rate: 80 },
-  my_role: 'lead', created_at: '2025-01-01', updated_at: '2025-01-01',
+  my_role: 'lead', can_manage: true, can_write: true, created_at: '2025-01-01', updated_at: '2025-01-01',
 };
 
 const mockJobs = {

@@ -49,6 +49,21 @@ export const queryKeys = {
     ['defects', teamSlug, projectSlug] as const,
   defectStats: (teamSlug?: string, projectSlug?: string) =>
     ['defect-stats', teamSlug, projectSlug] as const,
+  qaSettings: (teamSlug?: string, projectSlug?: string) => ['qa-settings', teamSlug, projectSlug] as const,
+  defectComments: (defectId?: string) => ['defect-comments', defectId] as const,
+  defectHistory: (defectId?: string) => ['defect-history', defectId] as const,
+  regressions: (teamSlug?: string, projectSlug?: string) => ['regressions', teamSlug, projectSlug] as const,
+  assignableMembers: (teamSlug?: string, projectSlug?: string) =>
+    ['assignable-members', teamSlug, projectSlug] as const,
+  projectCases: (teamSlug?: string, projectSlug?: string) => ['project-cases', teamSlug, projectSlug] as const,
+  sprintCases: (teamSlug?: string, projectSlug?: string, sprintId?: string) =>
+    ['sprint-cases', teamSlug, projectSlug, sprintId] as const,
+  /** Racines invalidées après toute action modifiant les indicateurs d'un projet. */
+  performance: (teamSlug?: string, projectSlug?: string, sprintIds?: string[]) =>
+    ['performance', teamSlug, projectSlug, ...(sprintIds ?? [])] as const,
+  evolution: (teamSlug?: string, projectSlug?: string, sprintIds?: string[]) =>
+    ['evolution', teamSlug, projectSlug, ...(sprintIds ?? [])] as const,
+  teamPerformance: (teamSlug?: string) => ['team-performance', teamSlug] as const,
   memberProgress: (teamSlug?: string, projectSlug?: string) =>
     ['member-progress', teamSlug, projectSlug] as const,
   weeklyReports: (teamSlug?: string) => ['weekly-reports', teamSlug] as const,
@@ -124,5 +139,14 @@ export function invalidateProjectScope(
   queryClient.invalidateQueries({ queryKey: queryKeys.projectMembers(teamSlug, projectSlug) });
   queryClient.invalidateQueries({ queryKey: queryKeys.defectStats(teamSlug, projectSlug) });
   queryClient.invalidateQueries({ queryKey: queryKeys.memberProgress(teamSlug, projectSlug) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.sprints(teamSlug, projectSlug) });
+  queryClient.invalidateQueries({ queryKey: ['sprint-board', teamSlug, projectSlug] });
+  queryClient.invalidateQueries({ queryKey: queryKeys.defectsRoot(teamSlug, projectSlug) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.regressions(teamSlug, projectSlug) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.performance(teamSlug, projectSlug) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.evolution(teamSlug, projectSlug) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.teamPerformance(teamSlug) });
+  queryClient.invalidateQueries({ queryKey: ['sprint-cases', teamSlug, projectSlug] });
+  queryClient.invalidateQueries({ queryKey: queryKeys.projectCases(teamSlug, projectSlug) });
   queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(teamSlug) });
 }

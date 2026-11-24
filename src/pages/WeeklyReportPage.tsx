@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { teamsApi } from '../api/teams';
@@ -8,6 +8,12 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import type { WeeklyReport } from '../types';
 import { queryKeys } from '../lib/queryKeys';
+import { getApiErrorMessage } from '../lib/errors';
+
+type ReportField = 'accomplishments' | 'blockers' | 'next_week_plans' | 'additional_notes';
+
+/** Délai d'inactivité avant l'enregistrement automatique (ms). */
+const AUTOSAVE_DELAY = 800;
 
 export default function WeeklyReportPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -48,11 +54,47 @@ export default function WeeklyReportPage() {
     },
   });
 
-  const saveField = (field: string, value: string) => {
-    const data: Record<string, unknown> = { [field]: value };
+  // Saisie locale : le texte tapé ne dépend pas des allers-retours serveur.
+  const [draft, setDraft] = useState<Partial<Record<ReportField, string>>>({});
+  const pending = useRef<Partial<Record<ReportField, string>>>({});
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flush = async () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const changes = pending.current;
+    pending.current = {};
+    if (Object.keys(changes).length === 0) return;
+    const data: Record<string, unknown> = { ...changes };
     if (current?.week_start) data.week_start = current.week_start;
     if (current?.week_end) data.week_end = current.week_end;
-    saveMutation.mutate(data);
+    try {
+      await saveMutation.mutateAsync(data);
+    } catch (error) {
+      // Rien n'est perdu : les champs non enregistrés seront renvoyés à la prochaine tentative.
+      pending.current = { ...changes, ...pending.current };
+      throw error;
+    }
+  };
+
+  const flushRef = useRef(flush);
+  useEffect(() => { flushRef.current = flush; });
+  useEffect(() => () => { flushRef.current().catch(() => undefined); }, []);
+
+  const saveField = (field: ReportField, value: string) => {
+    setDraft(d => ({ ...d, [field]: value }));
+    pending.current[field] = value;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { flushRef.current().catch(() => undefined); }, AUTOSAVE_DELAY);
+  };
+
+  const submit = async () => {
+    try {
+      await flush();
+      submitMutation.mutate();
+    } catch {
+      // L'erreur d'enregistrement est déjà affichée.
+    }
   };
 
   return (
@@ -73,7 +115,7 @@ export default function WeeklyReportPage() {
             {viewAll ? 'Masquer l\'historique' : 'Voir historique'}
           </Button>
           {current && current.status === 'draft' && (
-            <Button size="sm" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}>
+            <Button size="sm" onClick={submit} disabled={submitMutation.isPending}>
               {submitMutation.isPending ? '⏳…' : '📤 Soumettre'}
             </Button>
           )}
@@ -98,7 +140,7 @@ export default function WeeklyReportPage() {
                 ✅ Accomplissements
               </label>
               <textarea
-                value={current.accomplishments}
+                value={draft.accomplishments ?? current.accomplishments}
                 onChange={e => saveField('accomplishments', e.target.value)}
                 className="w-full px-4 py-3 border border-outline-variant rounded-lg outline-none focus:border-primary bg-surface resize-none min-h-[120px] text-body-base"
                 placeholder="Décrivez ce que vous avez accompli cette semaine..."
@@ -111,7 +153,7 @@ export default function WeeklyReportPage() {
                 🚧 Blocages / Problèmes
               </label>
               <textarea
-                value={current.blockers}
+                value={draft.blockers ?? current.blockers}
                 onChange={e => saveField('blockers', e.target.value)}
                 className="w-full px-4 py-3 border border-outline-variant rounded-lg outline-none focus:border-primary bg-surface resize-none min-h-[120px] text-body-base"
                 placeholder="Avez-vous rencontré des problèmes ou blocages ?"
@@ -124,7 +166,7 @@ export default function WeeklyReportPage() {
                 📋 Prévisions semaine prochaine
               </label>
               <textarea
-                value={current.next_week_plans}
+                value={draft.next_week_plans ?? current.next_week_plans}
                 onChange={e => saveField('next_week_plans', e.target.value)}
                 className="w-full px-4 py-3 border border-outline-variant rounded-lg outline-none focus:border-primary bg-surface resize-none min-h-[120px] text-body-base"
                 placeholder="Que prévoyez-vous pour la semaine prochaine ?"
@@ -137,7 +179,7 @@ export default function WeeklyReportPage() {
                 💬 Notes supplémentaires
               </label>
               <textarea
-                value={current.additional_notes}
+                value={draft.additional_notes ?? current.additional_notes}
                 onChange={e => saveField('additional_notes', e.target.value)}
                 className="w-full px-4 py-3 border border-outline-variant rounded-lg outline-none focus:border-primary bg-surface resize-none min-h-[80px] text-body-base"
                 placeholder="Toute information supplémentaire..."
@@ -147,6 +189,9 @@ export default function WeeklyReportPage() {
 
             {saveMutation.isPending && (
               <p className="text-body-sm text-primary animate-pulse">Sauvegarde en cours…</p>
+            )}
+            {(saveMutation.isError || submitMutation.isError) && (
+              <p role="alert" className="text-body-sm text-error">{getApiErrorMessage(saveMutation.error || submitMutation.error, 'Enregistrement impossible.')}</p>
             )}
           </div>
         </Card>
