@@ -123,16 +123,25 @@ describe('WeeklyReportPage', () => {
     });
   });
 
-  it('auto-saves when typing', async () => {
+  it('keeps what is typed and auto-saves once', async () => {
     mockTeamsApi.updateWeeklyReport.mockResolvedValue(mockCurrentReport);
     const user = userEvent.setup();
     renderPage();
-    await waitFor(async () => {
-      const textareas = screen.getAllByRole('textbox');
-      if (textareas.length > 0) {
-        await user.type(textareas[0], ' new content');
-      }
-    });
+    const field = await screen.findByPlaceholderText(/Décrivez ce que vous avez accompli/);
+    await user.type(field, ' new content');
+    expect((field as HTMLTextAreaElement).value).toMatch(/ new content$/);
+    await waitFor(() => expect(mockTeamsApi.updateWeeklyReport).toHaveBeenCalledTimes(1));
+    expect(mockTeamsApi.updateWeeklyReport.mock.calls[0][2].accomplishments).toMatch(/ new content$/);
+  });
+
+  it('saves pending text before submitting', async () => {
+    mockTeamsApi.updateWeeklyReport.mockResolvedValue(mockCurrentReport);
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(await screen.findByPlaceholderText(/Décrivez ce que vous avez accompli/), '!');
+    await user.click(screen.getByText('📤 Soumettre'));
+    await waitFor(() => expect(mockTeamsApi.updateWeeklyReport).toHaveBeenCalledTimes(2));
+    expect(mockTeamsApi.updateWeeklyReport.mock.calls[1][2]).toEqual({ status: 'submitted' });
   });
 
   it('shows historical reports when toggled', async () => {

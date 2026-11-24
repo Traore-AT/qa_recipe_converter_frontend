@@ -9,12 +9,17 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { StatusPill } from '../components/ui/StatusPill';
-import type { TeamMember } from '../types';
+import { PerformancePanel } from '../components/qa/PerformancePanel';
+import { QaSettingsPanel } from '../components/qa/QaSettingsPanel';
+import { ReportBuilder } from '../components/qa/ReportBuilder';
+import { SprintEditModal } from '../components/qa/SprintEditModal';
+import { SPRINT_STATUS_LABELS } from '../lib/qa';
+import type { Sprint, TeamMember } from '../types';
 import { getApiErrorMessage } from '../lib/errors';
 import { queryKeys } from '../lib/queryKeys';
 import { downloadBlob } from '../lib/download';
 
-type ProjectTab = 'overview' | 'sprints' | 'defects' | 'progress' | 'reports';
+type ProjectTab = 'overview' | 'performance' | 'sprints' | 'defects' | 'progress' | 'reports' | 'settings';
 
 export default function ProjectDetailPage() {
   const { slug, projectSlug } = useParams<{ slug: string; projectSlug: string }>();
@@ -22,6 +27,7 @@ export default function ProjectDetailPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
   const [reportError, setReportError] = useState('');
+  const [editedSprint, setEditedSprint] = useState<Sprint | null>(null);
 
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
@@ -47,14 +53,14 @@ export default function ProjectDetailPage() {
 
   const { data: jobs } = useQuery({
     queryKey: queryKeys.projectJobs(slug, projectSlug),
-    queryFn: () => conversionApi.listJobs(),
-    enabled: !!slug && !!projectSlug,
+    queryFn: () => conversionApi.listJobs(1, project!.id),
+    enabled: !!project,
   });
 
   const { data: sprints } = useQuery({
     queryKey: queryKeys.sprints(slug, projectSlug),
     queryFn: () => teamsApi.listSprints(slug!, projectSlug!),
-    enabled: !!slug && !!projectSlug && activeTab === 'sprints',
+    enabled: !!slug && !!projectSlug && ['sprints', 'reports', 'performance'].includes(activeTab),
   });
 
   const { data: defectStats } = useQuery({
@@ -90,13 +96,15 @@ export default function ProjectDetailPage() {
 
   const tabItems: { key: ProjectTab; label: string; icon: string }[] = [
     { key: 'overview', label: 'Vue d\'ensemble', icon: '📊' },
+    { key: 'performance', label: 'Performance', icon: '📈' },
     { key: 'sprints', label: 'Sprints', icon: '🏃' },
     { key: 'defects', label: 'Anomalies', icon: '🐛' },
     { key: 'progress', label: 'Membres', icon: '👥' },
     { key: 'reports', label: 'Rapports', icon: '📄' },
+    { key: 'settings', label: 'Réglages', icon: '⚙️' },
   ];
 
-  const canManage = project?.my_role === 'lead' || project?.my_role === 'owner' || project?.my_role === 'admin';
+  const canManage = !!project?.can_manage;
 
   const notProjectMembers = teamMembers?.results?.filter(
     (tm: TeamMember) => !members?.results?.some(pm => pm.user.id === tm.user.id)
@@ -256,6 +264,10 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         </>
+      ) : activeTab === 'performance' ? (
+        <PerformancePanel teamSlug={slug!} projectSlug={projectSlug!} sprints={sprints?.results ?? []} />
+      ) : activeTab === 'settings' ? (
+        <QaSettingsPanel teamSlug={slug!} projectSlug={projectSlug!} canManage={canManage} />
       ) : activeTab === 'sprints' ? (
         <div>
           <div className="flex items-center justify-between mb-4">
@@ -266,15 +278,16 @@ export default function ProjectDetailPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {sprints?.results?.map(sprint => (
-              <Card key={sprint.id} hover onClick={() => navigate(`/teams/${slug}/projects/${projectSlug}/sprints/${sprint.id}`)}>
-                <div className="p-4">
+              <Card key={sprint.id}>
+                <button type="button" className="block w-full cursor-pointer text-left" onClick={() => navigate(`/teams/${slug}/projects/${projectSlug}/sprints/${sprint.id}`)}>
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-body-base font-bold text-on-surface truncate">{sprint.name}</h3>
                     <Badge variant={sprint.status === 'active' ? 'success' : sprint.status === 'completed' ? 'info' : 'default'}>
-                      {sprint.status}
+                      {SPRINT_STATUS_LABELS[sprint.status]}
                     </Badge>
                   </div>
-                  <p className="text-body-sm text-on-surface-variant mb-2">{sprint.start_date} → {sprint.end_date}</p>
+                  {sprint.kind === 'regression' && <Badge variant="warning" className="mb-2">🔁 Non-régression</Badge>}
+                  <p className="text-body-sm text-on-surface-variant mb-2">{sprint.start_date} → {sprint.end_date} ({sprint.duration_days} jours)</p>
                   {sprint.stats && sprint.stats.total > 0 && (
                     <div className="flex items-center gap-2 text-body-xs text-on-surface-variant">
                       <span>✅ {sprint.stats.passed}</span>
@@ -282,7 +295,12 @@ export default function ProjectDetailPage() {
                       <span className="font-mono ml-auto">{sprint.stats.progress_pct}%</span>
                     </div>
                   )}
-                </div>
+                </button>
+                {canManage && (
+                  <div className="mt-3 flex justify-end">
+                    <Button variant="ghost" size="sm" aria-label={`Modifier ${sprint.name}`} onClick={() => setEditedSprint(sprint)}>✏️ Modifier</Button>
+                  </div>
+                )}
               </Card>
             ))}
             {(!sprints?.results || sprints.results.length === 0) && (
@@ -343,6 +361,8 @@ export default function ProjectDetailPage() {
         </div>
       ) : activeTab === 'reports' ? (
         <div>
+          <ReportBuilder teamSlug={slug!} projectSlug={projectSlug!} sprints={sprints?.results ?? []} />
+
           <h2 className="text-headline-md font-bold text-on-surface mb-4">Rapports PDF</h2>
           <Card className="mb-6">
             <div className="p-5">
@@ -371,6 +391,10 @@ export default function ProjectDetailPage() {
           )}
         </div>
       ) : null}
+
+      {editedSprint && (
+        <SprintEditModal teamSlug={slug!} projectSlug={projectSlug!} sprint={editedSprint} onClose={() => setEditedSprint(null)} />
+      )}
 
       <Modal
         open={assignModalOpen}
@@ -409,6 +433,7 @@ export default function ProjectDetailPage() {
           <Button variant="secondary" onClick={() => setAssignModalOpen(false)}>
             Annuler
           </Button>
+          {assignMutation.isError && <p role="alert" className="text-body-sm text-error">{getApiErrorMessage(assignMutation.error)}</p>}
           <Button onClick={() => { if (selectedUserId) assignMutation.mutate({ user_id: selectedUserId as number, role: selectedRole }); }}
                   disabled={!selectedUserId || assignMutation.isPending}>
             {assignMutation.isPending ? '⏳ Ajout…' : '✅ Ajouter'}

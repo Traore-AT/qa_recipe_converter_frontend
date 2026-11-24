@@ -1,4 +1,15 @@
 import '@testing-library/jest-dom/vitest';
+import { configure } from '@testing-library/react';
+
+// Marge pour les machines chargées : évite les faux échecs de synchronisation.
+configure({ asyncUtilTimeout: 5_000 });
+
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+Object.defineProperty(window, 'ResizeObserver', { writable: true, value: MockResizeObserver });
 
 class MockIntersectionObserver {
   observe() {}

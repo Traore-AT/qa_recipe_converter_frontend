@@ -13,7 +13,16 @@ const { mockTeamsApi, mockNavigate } = vi.hoisted(() => ({
     getTeam: vi.fn(),
     listSprints: vi.fn(),
     getSprintBoard: vi.fn(),
-    listProjectMembers: vi.fn(),
+    listAssignableMembers: vi.fn(),
+    listAssignments: vi.fn(),
+    getProjectProgress: vi.fn(),
+    createDefect: vi.fn(),
+    updateSprint: vi.fn(),
+    downloadProjectReport: vi.fn(),
+    sendSprintReport: vi.fn(),
+    getCarryOver: vi.fn(),
+    carryOver: vi.fn(),
+    importTestResults: vi.fn(),
     getUnassignedUseCases: vi.fn(),
     createSprint: vi.fn(),
     createAssignments: vi.fn(),
@@ -80,7 +89,11 @@ describe('SprintBoardPage', () => {
     mockTeamsApi.getTeam.mockResolvedValue({ id: 't1', name: 'QA Team', slug: 'qa-team', my_role: 'admin' });
     mockTeamsApi.listSprints.mockResolvedValue(mockSprints);
     mockTeamsApi.getSprintBoard.mockResolvedValue(mockBoard);
-    mockTeamsApi.listProjectMembers.mockResolvedValue({ count: 2, results: [{ id: 'pm1', user: { id: 2, username: 'tester', full_name: 'Tester User', email: 'tester@test.com', date_joined: '' }, role: 'tester', added_at: '' }] });
+    mockTeamsApi.listAssignableMembers.mockResolvedValue({ count: 2, results: [
+      { user: { id: 2, username: 'tester', full_name: 'Tester User' }, team_role: 'member', project_member_id: 'pm1', in_project: true },
+      { user: { id: 3, username: 'nouveau', full_name: 'Moussa Camara' }, team_role: 'member', project_member_id: null, in_project: false },
+    ] });
+    mockTeamsApi.listAssignments.mockResolvedValue({ count: 1, results: mockBoard.columns['À tester'] });
     mockTeamsApi.getUnassignedUseCases.mockResolvedValue({ count: 2, results: [{ id: 'uc4', order: 4, use_case_text: 'TC004', description: 'Profile test', status: 'À tester' }, { id: 'uc5', order: 5, use_case_text: 'TC005', description: 'Settings test', status: 'À tester' }] });
   });
 
@@ -230,5 +243,155 @@ describe('SprintBoardPage', () => {
     await waitFor(() => {
       expect(screen.getByText('user registered')).toBeInTheDocument();
     });
+  });
+
+  it('lists every team member and assigns a case from the card', async () => {
+    mockTeamsApi.updateSprintCase.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    const select = await screen.findByLabelText('Assigner CAS-001');
+    await waitFor(() => expect(select).toHaveTextContent('Moussa Camara (équipe)'));
+    await user.selectOptions(select, '3');
+    await waitFor(() => expect(mockTeamsApi.updateSprintCase).toHaveBeenCalledWith('qa-team', 'qa-project', 'a1', { assigned_user_id: 3 }));
+  });
+
+  it('bulk-assigns cases to a team member', async () => {
+    mockTeamsApi.createAssignments.mockResolvedValue({ count: 2 });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('+ Assigner des cas'));
+    await user.selectOptions(screen.getByLabelText('Membre'), '3');
+    await user.click(await screen.findByLabelText('Sélectionner tous les cas'));
+    await user.click(screen.getByText('✅ Assigner (2)'));
+    await waitFor(() => expect(mockTeamsApi.createAssignments).toHaveBeenCalledWith('qa-team', 'qa-project', { use_case_ids: ['uc4', 'uc5'], sprint_id: 's1', user_id: 3 }));
+  });
+
+  it('lets a simple member change a status but not manage cases', async () => {
+    mockTeamsApi.getTeam.mockResolvedValue({ id: 't1', name: 'QA Team', slug: 'qa-team', my_role: 'member' });
+    mockTeamsApi.updateUseCaseStatus.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.selectOptions(await screen.findByLabelText('Statut de CAS-001'), 'Passé');
+    await waitFor(() => expect(mockTeamsApi.updateUseCaseStatus).toHaveBeenCalledWith('qa-team', 'qa-project', 'uc1', 'Passé', 's1'));
+    expect(screen.queryByLabelText('Assigner CAS-001')).not.toBeInTheDocument();
+    expect(screen.queryByText('✏️ Modifier le sprint')).not.toBeInTheDocument();
+  });
+
+  it('hides result edition for viewers', async () => {
+    mockTeamsApi.getTeam.mockResolvedValue({ id: 't1', name: 'QA Team', slug: 'qa-team', my_role: 'viewer' });
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await screen.findByText('CAS-001');
+    expect(screen.queryByLabelText('Statut de CAS-001')).not.toBeInTheDocument();
+  });
+
+  it('freezes results of a completed sprint', async () => {
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s2');
+    expect(await screen.findByText(/ses résultats sont figés/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Statut de CAS-001')).not.toBeInTheDocument();
+  });
+
+  it('edits sprint name and duration', async () => {
+    mockTeamsApi.updateSprint.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('✏️ Modifier le sprint'));
+    const name = screen.getByLabelText('Nom *');
+    await user.clear(name);
+    await user.type(name, 'Sprint Alpha');
+    const duration = screen.getByLabelText('Durée (jours)');
+    await user.clear(duration);
+    await user.type(duration, '20');
+    expect(screen.getByLabelText('Fin *')).toHaveValue('2026-06-21');
+    await user.click(screen.getByText('Enregistrer'));
+    await waitFor(() => expect(mockTeamsApi.updateSprint).toHaveBeenCalledWith('qa-team', 'qa-project', 's1',
+      expect.objectContaining({ name: 'Sprint Alpha', start_date: '2026-06-01', end_date: '2026-06-21' })));
+  });
+
+  it('downloads the sprint report', async () => {
+    mockTeamsApi.downloadProjectReport.mockRejectedValue({ response: { status: 500, data: { error: 'Boum' } } });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('📄 Rapport PDF'));
+    expect(mockTeamsApi.downloadProjectReport).toHaveBeenCalledWith('qa-team', 'qa-project', ['s1']);
+    expect(await screen.findByText('Boum')).toBeInTheDocument();
+  });
+
+  it('reports a defect linked to the case and the sprint', async () => {
+    mockTeamsApi.getUseCaseDetail.mockResolvedValue({ assignment: mockBoard.columns['À tester'][0], use_case: { id: 'uc1' }, screenshots: [], comments: [] });
+    mockTeamsApi.createDefect.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('CAS-001'));
+    await user.click(await screen.findByText('🐛 Signaler une anomalie'));
+    await user.type(await screen.findByLabelText('Titre *'), 'Bug de connexion');
+    await user.click(screen.getByText('✅ Signaler'));
+    await waitFor(() => expect(mockTeamsApi.createDefect).toHaveBeenCalledWith('qa-team', 'qa-project',
+      expect.objectContaining({ title: 'Bug de connexion', sprint: 's1', use_case: 'uc1' })));
+  });
+
+  it('shows linked defects and regressions on cards', async () => {
+    const card = { ...mockBoard.columns['À tester'][0], is_regression: true, open_defects_count: 2, defects: [] };
+    mockTeamsApi.getSprintBoard.mockResolvedValue({ ...mockBoard, columns: { ...mockBoard.columns, 'À tester': [card] } });
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    expect(await screen.findByText('↩ Régression')).toBeInTheDocument();
+    expect(screen.getByText(/2 anomalies/)).toBeInTheDocument();
+  });
+
+  it('sends the sprint report by email', async () => {
+    mockTeamsApi.sendSprintReport.mockResolvedValue({ recipients: 2 });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('✉️ Envoyer le rapport'));
+    expect(await screen.findByText('Rapport en cours d’envoi à 2 responsables.')).toBeInTheDocument();
+    expect(mockTeamsApi.sendSprintReport).toHaveBeenCalledWith('qa-team', 'qa-project', 's1');
+  });
+
+  it('carries unfinished cases over to a new sprint', async () => {
+    mockTeamsApi.getCarryOver.mockResolvedValue({ count: 2, results: [
+      { use_case: 'uc1', case_number: 1, title: 'TC001', status: 'À tester', assigned_to: null },
+      { use_case: 'uc2', case_number: 2, title: 'TC002', status: 'Bloqué', assigned_to: 'X' },
+    ] });
+    mockTeamsApi.carryOver.mockResolvedValue({ created: 1, skipped: [], sprint: { id: 's2', name: 'Sprint 0' } });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('↪ Reporter les cas'));
+    await user.click(await screen.findByRole('checkbox', { name: /CAS-002/ }));
+    await user.click(screen.getByRole('button', { name: 'Reporter 1 cas' }));
+    await waitFor(() => expect(mockTeamsApi.carryOver).toHaveBeenCalledWith('qa-team', 'qa-project', 's1', expect.objectContaining({
+      case_ids: ['uc1'], close_source: true, include_failed: false,
+      new_sprint: expect.objectContaining({ name: 'Sprint 1 (suite)', duration_days: 14 }),
+    })));
+    expect(await screen.findByText('Cas reportés vers « Sprint 0 ».')).toBeInTheDocument();
+  });
+
+  it('previews then applies automated results', async () => {
+    const preview = { total: 3, passed: 1, failed: 1, skipped: 1, unmatched: ['Inconnu'], unmatched_count: 1, outside_sprint: [9], applied: false, updated: 0, defects_created: 0,
+      cases: [{ use_case: 'uc1', case_number: 1, title: 'TC001', old_status: 'À tester', new_status: 'Échoué', tests: 1, message: 'boom' }] };
+    mockTeamsApi.importTestResults.mockResolvedValueOnce(preview).mockResolvedValueOnce({ ...preview, applied: true, updated: 1, defects_created: 1 });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('⬆️ Importer des résultats'));
+    await user.upload(screen.getByLabelText('Fichiers de résultats'), [new File(['<testsuites/>'], 'a.xml'), new File(['{}'], 'b.json')]);
+    await user.click(screen.getByLabelText(/Créer une anomalie/));
+    await user.click(screen.getByRole('button', { name: 'Analyser' }));
+    expect(await screen.findByText('1 sans cas correspondant')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Appliquer à 1 cas' }));
+    expect(await screen.findByText(/1 statut\(s\) modifié\(s\), 1 anomalie/)).toBeInTheDocument();
+    const [first, second] = mockTeamsApi.importTestResults.mock.calls.map(c => c[2] as FormData);
+    expect(first.get('dry_run')).toBe('true');
+    expect(second.get('dry_run')).toBe('false');
+    expect(second.getAll('files')).toHaveLength(2);
+    expect(second.get('sprint')).toBe('s1');
+    expect(second.get('create_defects')).toBe('true');
+  });
+
+  it('shows import errors', async () => {
+    mockTeamsApi.importTestResults.mockRejectedValue({ response: { status: 400, data: { error: 'a.xml : XML invalide.' } } });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('⬆️ Importer des résultats'));
+    await user.upload(screen.getByLabelText('Fichiers de résultats'), new File(['x'], 'a.xml'));
+    await user.click(screen.getByRole('button', { name: 'Analyser' }));
+    expect(await screen.findByText('a.xml : XML invalide.')).toBeInTheDocument();
   });
 });

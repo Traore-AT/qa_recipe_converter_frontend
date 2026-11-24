@@ -87,6 +87,7 @@
 }
 
 html.dark {
+  color-scheme: dark;
   --color-surface: #0f172a;
   --color-surface-bright: #1e2d3b;
   --color-surface-dim: #111827;

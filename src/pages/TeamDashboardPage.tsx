@@ -8,6 +8,7 @@ import { StatusPill } from '../components/ui/StatusPill';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { TeamPerformance } from '../components/qa/TeamPerformance';
 import { useAuth } from '../context/AuthContext';
 import { getApiErrorMessage } from '../lib/errors';
 import { queryKeys } from '../lib/queryKeys';
@@ -102,6 +103,7 @@ export default function TeamDashboardPage() {
   }
 
   const { team, stats, projects, members } = dashboard;
+  const canManageTeam = user?.id === team.owner.id || team.my_role === 'owner' || team.my_role === 'admin';
 
   return (
     <PageLayout>
@@ -121,9 +123,9 @@ export default function TeamDashboardPage() {
             <p className="text-body-base text-on-surface-variant mt-0.5 truncate">{team.description}</p>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
-            <Button onClick={() => navigate(`/teams/${slug}/projects/new`)} size="sm" className="flex-1 sm:flex-none">➕ Nouveau projet</Button>
+            {canManageTeam && <Button onClick={() => navigate(`/teams/${slug}/projects/new`)} size="sm" className="flex-1 sm:flex-none">➕ Nouveau projet</Button>}
             {user?.id === team.owner.id && <Button variant="secondary" onClick={() => { setMemberForm(f => ({ ...f, team_slugs: [slug!] })); setMemberModalOpen(true); }} size="sm" className="flex-1 sm:flex-none">＋ Créer un membre</Button>}
-            <Button variant="secondary" onClick={() => setInviteModalOpen(true)} size="sm" className="flex-1 sm:flex-none">✉️ Inviter</Button>
+            {canManageTeam && <Button variant="secondary" onClick={() => setInviteModalOpen(true)} size="sm" className="flex-1 sm:flex-none">✉️ Inviter</Button>}
             <Button variant="secondary" onClick={() => navigate(`/teams/${slug}/activity`)} size="sm" className="flex-1 sm:flex-none">🕘 Activité</Button>
             <Button variant="secondary" onClick={() => navigate(`/teams/${slug}/weekly-reports`)} size="sm" className="flex-1 sm:flex-none">📝 Rapports</Button>
           </div>
@@ -157,6 +159,8 @@ export default function TeamDashboardPage() {
           </div>
         </Card>
       )}
+
+      <TeamPerformance teamSlug={slug!} />
 
       {/* Main content grid — clearly separated columns */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
@@ -293,7 +297,7 @@ export default function TeamDashboardPage() {
           <label className="block text-label-md">Nom d’utilisateur<input autoComplete="off" value={memberForm.username} onChange={e => setMemberForm(f => ({ ...f, username: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="block text-label-md">Mot de passe (8 caractères minimum)<input type="password" autoComplete="new-password" value={memberForm.password} onChange={e => setMemberForm(f => ({ ...f, password: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="block text-label-md">Rôle<select value={memberForm.role} onChange={e => setMemberForm(f => ({ ...f, role: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="member">Membre</option><option value="admin">Admin</option><option value="viewer">Lecteur</option></select></label>
-          <fieldset><legend className="text-label-md mb-1">Équipes</legend>{(allTeams?.results ?? []).map(t => <label key={t.id} className="flex items-center gap-2 py-1"><input type="checkbox" checked={memberForm.team_slugs.includes(t.slug)} onChange={e => setMemberForm(f => ({ ...f, team_slugs: e.target.checked ? [...f.team_slugs, t.slug] : f.team_slugs.filter(s => s !== t.slug) }))} />{t.name}</label>)}</fieldset>
+          <fieldset><legend className="text-label-md mb-1">Équipes</legend>{(allTeams?.results ?? []).filter(t => t.owner.id === user?.id).map(t => <label key={t.id} className="flex items-center gap-2 py-1"><input type="checkbox" checked={memberForm.team_slugs.includes(t.slug)} onChange={e => setMemberForm(f => ({ ...f, team_slugs: e.target.checked ? [...f.team_slugs, t.slug] : f.team_slugs.filter(s => s !== t.slug) }))} />{t.name}</label>)}</fieldset>
         </div>
         {createMemberMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(createMemberMutation.error, 'Création du membre impossible')}</p>}
         <div className="flex justify-end gap-3 mt-5"><Button variant="secondary" onClick={() => setMemberModalOpen(false)}>Annuler</Button><Button disabled={!memberForm.username || memberForm.password.length < 8 || !memberForm.team_slugs.length || createMemberMutation.isPending} onClick={() => createMemberMutation.mutate()}>{createMemberMutation.isPending ? 'Création…' : 'Créer le compte'}</Button></div>

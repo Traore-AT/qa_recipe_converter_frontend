@@ -72,12 +72,12 @@ export default function ActivityPage() {
             <Card key={activity.id} className="p-4">
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-semibold text-sm shrink-0">
-                  {(activity.actor.full_name || activity.actor.username).charAt(0).toUpperCase()}
+                  {(activity.actor?.full_name || activity.actor?.username || 'Système').charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-body-sm font-semibold text-on-surface">
-                      {activity.actor.full_name || activity.actor.username}
+                      {activity.actor?.full_name || activity.actor?.username || 'Système'}
                     </span>
                     <Badge variant="info">{actionLabel(activity.action_type)}</Badge>
                     {activity.project && (

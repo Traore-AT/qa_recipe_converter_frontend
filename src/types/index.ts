@@ -47,6 +47,7 @@ export interface ProjectStats {
   passed: number;
   failed: number;
   blocked: number;
+  in_progress?: number;
   not_run: number;
   automated: number;
   success_rate: number;
@@ -67,6 +68,9 @@ export interface Project {
   status: 'active' | 'archived' | 'completed';
   stats: ProjectStats;
   my_role: string | null;
+  /** Droits effectifs de l'utilisateur connecté (rôle d'équipe inclus). */
+  can_manage?: boolean;
+  can_write?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -221,6 +225,8 @@ export interface Sprint {
   status: 'planned' | 'active' | 'completed' | 'closed';
   created_by: User;
   duration_days: number;
+  kind?: 'standard' | 'regression';
+  report_sent_at?: string | null;
   stats: SprintStats;
   created_at: string;
   updated_at: string;
@@ -256,15 +262,57 @@ export interface UseCaseAssignment {
   assigned_by_user: User | null;
   assigned_at: string;
   status: string;
+  defects?: LinkedDefect[];
+  open_defects_count?: number;
+  carried_from_name?: string | null;
+  is_regression?: boolean;
 }
 
+/** Membre de l'équipe pouvant recevoir des cas de test. */
+export interface AssignableMember {
+  user: User;
+  team_role: string;
+  project_member_id: string | null;
+  in_project: boolean;
+}
 
 // ── Defect ──────────────────────────────────────────────────────────────────
+export interface LinkedDefect {
+  id: string;
+  ticket_number: string;
+  title: string;
+  severity: Defect['severity'];
+  status: Defect['status'];
+  is_regression?: boolean;
+}
+
+export interface CaseSummary {
+  id: string;
+  case_number: number;
+  title: string;
+  status: string;
+}
+
 export interface Defect {
   id: string;
   ticket_number: string;
   sprint: string | null;
+  sprint_name: string | null;
   use_case: string | null;
+  use_case_detail: CaseSummary | null;
+  related_use_cases: string[];
+  related_cases: CaseSummary[];
+  is_regression: boolean;
+  regression_of: string | null;
+  regression_of_ticket: string | null;
+  resolution: string;
+  resolved_at: string | null;
+  closed_at: string | null;
+  reopen_count: number;
+  jira_key?: string | null;
+  jira_url?: string | null;
+  jira_sync_error?: string;
+  comments_count: number;
   project: string;
   title: string;
   description: string;
@@ -284,12 +332,174 @@ export interface Defect {
   updated_at: string;
 }
 
+export interface DefectComment {
+  id: string;
+  defect: string;
+  /** Nul pour un commentaire venu de Jira (voir `external_author`). */
+  author: User | null;
+  external_author?: string;
+  content: string;
+  created_at: string;
+}
+
+export interface DefectHistoryEntry {
+  id: string;
+  actor: User | null;
+  field: string;
+  old_value: string;
+  new_value: string;
+  created_at: string;
+}
+
+export interface QaSettings {
+  alert_on_regression: boolean;
+  alert_on_critical_defect: boolean;
+  auto_report_on_close: boolean;
+  jira_enabled: boolean;
+  jira_project_key: string;
+  jira_issue_type: string;
+  jira_import: boolean;
+  jira_configured: boolean;
+  can_edit_jira: boolean;
+  recipients_count: number;
+  updated_at: string;
+}
+
+export interface CarryOverCase {
+  use_case: string;
+  case_number: number;
+  title: string;
+  status: string;
+  assigned_to: string | null;
+}
+
+export interface CarryOverPayload {
+  target_sprint?: string;
+  new_sprint?: { name: string; start_date: string; duration_days: number };
+  case_ids: string[];
+  include_failed: boolean;
+  close_source: boolean;
+}
+
+export interface TestImportResult {
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  unmatched: string[];
+  unmatched_count: number;
+  outside_sprint: number[];
+  applied: boolean;
+  updated: number;
+  defects_created: number;
+  cases: Array<{ use_case: string; case_number: number; title: string; old_status: string; new_status: string; tests: number; message: string }>;
+}
+
+export interface Regression {
+  use_case: string;
+  case_number: number;
+  title: string;
+  current_status: string;
+  is_active: boolean;
+  occurrences: number;
+  last_detected_at: string;
+  detected_by: string | null;
+  sprint: string | null;
+  sprint_name: string | null;
+  defects: LinkedDefect[];
+}
+
+// ── Performance, évolution, rapports ────────────────────────────────────────
+export type PerformanceLevel = 'excellent' | 'good' | 'average' | 'critical' | 'not_evaluated';
+
+export interface CaseStats {
+  total: number;
+  passed: number;
+  failed: number;
+  blocked: number;
+  in_progress: number;
+  not_run: number;
+  executed: number;
+  execution_rate: number;
+  success_rate: number;
+  pass_rate: number;
+}
+
+export interface SprintSummary {
+  id: string;
+  name: string;
+  status: Sprint['status'];
+  status_label: string;
+  start_date: string;
+  end_date: string;
+  duration_days: number;
+  stats: CaseStats;
+  defects: DefectStats;
+  regressed_cases: number;
+  score: number | null;
+  level: PerformanceLevel;
+  level_label: string;
+}
+
+export type ScoreComponent = 'pass_rate' | 'execution_rate' | 'resolution_rate' | 'stability_rate';
+
+export interface Performance {
+  score: number | null;
+  level: PerformanceLevel;
+  level_label: string;
+  components: Record<ScoreComponent, number>;
+  weights: Record<ScoreComponent, number>;
+  stats: CaseStats;
+  defects: DefectStats;
+  regressed_cases: number;
+  automation_rate: number;
+  automated: number;
+  defect_density: number;
+}
+
+export interface ProjectPerformance extends Performance {
+  sprints: SprintSummary[];
+}
+
+export interface EvolutionPoint {
+  date: string;
+  total: number;
+  passed: number;
+  failed: number;
+  success_rate: number;
+  execution_rate: number;
+  regressions: number;
+  defects_created: number;
+  defects_resolved: number;
+  defects_open: number;
+}
+
+export interface Evolution {
+  granularity: 'day' | 'week';
+  start: string;
+  end: string;
+  trend: number;
+  points: EvolutionPoint[];
+}
+
+export interface TeamPerformanceRow {
+  project: Pick<Project, 'id' | 'name' | 'slug' | 'color' | 'status'>;
+  performance: Performance;
+  trend: number;
+  evolution: Array<{ date: string; success_rate: number; execution_rate: number }>;
+}
+
 export interface DefectStats {
   total: number;
   open: number;
   in_progress: number;
   resolved: number;
   closed: number;
+  reopened?: number;
+  active?: number;
+  regressions?: number;
+  resolution_rate?: number;
+  avg_resolution_days?: number | null;
   critical: number;
   major: number;
   minor: number;
@@ -320,7 +530,8 @@ export interface ActivityLog {
   id: string;
   project: string | null;
   team: string | null;
-  actor: User;
+  /** Nul pour une action automatique (ex. Jira). */
+  actor: User | null;
   action_type: string;
   description: string;
   metadata: Record<string, unknown>;

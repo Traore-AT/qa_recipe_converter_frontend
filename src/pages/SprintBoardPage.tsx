@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { teamsApi } from '../api/teams';
@@ -7,9 +7,13 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, ProjectMember } from '../types';
-import { queryKeys } from '../lib/queryKeys';
-import { useAuth } from '../context/AuthContext';
+import { CarryOverModal } from '../components/qa/CarryOverModal';
+import { ImportResultsModal } from '../components/qa/ImportResultsModal';
+import { DefectFormModal } from '../components/qa/DefectFormModal';
+import { SprintEditModal } from '../components/qa/SprintEditModal';
+import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, SprintStats } from '../types';
+import { invalidateProjectScope, queryKeys } from '../lib/queryKeys';
+import { caseLabel, DEFECT_STATUS, SEVERITIES, SPRINT_STATUS_LABELS } from '../lib/qa';
 import { getApiErrorMessage } from '../lib/errors';
 
 const STATUS_COLUMNS = ['À tester', 'En cours', 'Passé', 'Échoué', 'Bloqué'];
@@ -21,13 +25,19 @@ const STATUS_COLORS: Record<string, string> = {
   'Bloqué': 'bg-warning',
 };
 
-type SprintCaseDraft = Pick<UseCaseAssignment, 'use_case_text' | 'jira_ticket' | 'description' | 'preconditions' | 'steps' | 'expected_results' | 'observed_results' | 'status' | 'assigned_to'> & { comment: string };
+const STATUS_STAT_KEYS: Record<string, keyof SprintStats> = {
+  'À tester': 'not_run', 'En cours': 'in_progress', 'Passé': 'passed', 'Échoué': 'failed', 'Bloqué': 'blocked',
+};
+
+/** Identifiant utilisateur choisi dans une liste (vide = non assigné). */
+const toUserId = (value: string) => (value ? Number(value) : null);
+
+type SprintCaseDraft = Pick<UseCaseAssignment, 'use_case_text' | 'jira_ticket' | 'description' | 'preconditions' | 'steps' | 'expected_results' | 'observed_results' | 'status'> & { comment: string; assigned_user_id: number | null };
 
 export default function SprintBoardPage() {
   const { slug, projectSlug, sprintId } = useParams<{ slug: string; projectSlug: string; sprintId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user: currentUser } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedSprint, setSelectedSprint] = useState<string | ''>(sprintId || '');
@@ -38,31 +48,15 @@ export default function SprintBoardPage() {
   const [ticketQuery, setTicketQuery] = useState('');
   const [ticketEditor, setTicketEditor] = useState<SprintCaseDraft | null>(null);
   const [assignmentEditor, setAssignmentEditor] = useState<UseCaseAssignment | null>(null);
+  const [editorAssignee, setEditorAssignee] = useState<number | null>(null);
+  const [editingSprint, setEditingSprint] = useState(false);
+  const [carryingOver, setCarryingOver] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [defectCase, setDefectCase] = useState<UseCaseAssignment | null>(null);
+  const [reportError, setReportError] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
 
-  const handleColumnDrop = (e: React.DragEvent, targetCol: string) => {
-    e.preventDefault();
-    const assignmentId = e.dataTransfer.getData('assignmentId');
-    const sourceCol = e.dataTransfer.getData('sourceCol');
-
-    if (!assignmentId || !targetCol || !sourceCol || targetCol === sourceCol) return;
-
-    // Find the assignment in the source column and update its status
-    const statusMap: Record<string, string> = {
-      'À tester': 'À tester',
-      'En cours': 'En cours',
-      'Passé': 'Passé',
-      'Échoué': 'Échoué',
-      'Bloqué': 'Bloqué',
-    };
-
-    const newStatus = statusMap[targetCol] || 'À tester';
-
-    // Call the API to update the use case status
-    statusMutation.mutate({ assignmentId, status: newStatus });
-
-    // Rafraîchit le tableau (le cache est invalidé par la mutation de statut)
-    queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
-  };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: currentTeam } = useQuery({
@@ -71,6 +65,7 @@ export default function SprintBoardPage() {
     enabled: !!slug,
   });
   const canManage = currentTeam?.my_role === 'owner' || currentTeam?.my_role === 'admin';
+  const canWrite = canManage || currentTeam?.my_role === 'member';
 
   const { data: sprints } = useQuery({
     queryKey: queryKeys.sprints(slug, projectSlug),
@@ -85,9 +80,9 @@ export default function SprintBoardPage() {
   });
 
   const { data: members } = useQuery({
-    queryKey: queryKeys.projectMembers(slug, projectSlug),
-    queryFn: () => teamsApi.listProjectMembers(slug!, projectSlug!),
-    enabled: !!slug && !!projectSlug && (showAssignModal || !!ticketEditor || !!assignmentEditor),
+    queryKey: queryKeys.assignableMembers(slug, projectSlug),
+    queryFn: () => teamsApi.listAssignableMembers(slug!, projectSlug!),
+    enabled: !!slug && !!projectSlug && canManage,
   });
 
   const { data: unassigned } = useQuery({
@@ -102,15 +97,17 @@ export default function SprintBoardPage() {
     enabled: !!slug && !!projectSlug && !!detailAssignmentId,
   });
 
-  const selectedAssignment = useMemo(() => {
-    if (!detailAssignmentId) return undefined;
-    return Object.values(board?.columns ?? {}).flat().find(a => a.id === detailAssignmentId);
-  }, [board, detailAssignmentId]);
+  const selectedAssignment = detailAssignmentId
+    ? Object.values(board?.columns ?? {}).flat().find(a => a.id === detailAssignmentId)
+    : undefined;
+
+  const refresh = () => invalidateProjectScope(queryClient, slug, projectSlug);
 
   const createSprintMutation = useMutation({
     mutationFn: () => teamsApi.createSprint(slug!, projectSlug!, newSprint),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sprints(slug, projectSlug) });
+    onSuccess: (sprint) => {
+      refresh();
+      if (sprint?.id) setSelectedSprint(sprint.id);
       setShowCreateModal(false);
       setNewSprint({ name: '', goal: '', start_date: '', end_date: '', status: 'planned' });
     },
@@ -123,7 +120,8 @@ export default function SprintBoardPage() {
       user_id: assignData.user_id,
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
+      refresh();
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignableMembers(slug, projectSlug) });
       queryClient.invalidateQueries({ queryKey: queryKeys.unassignedUcs(slug, projectSlug, selectedSprint) });
       setShowAssignModal(false);
       setAssignData({ use_case_ids: [], user_id: 0 });
@@ -131,16 +129,23 @@ export default function SprintBoardPage() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ assignmentId, status }: { assignmentId: string; status: string }) =>
-      teamsApi.updateSprintCase(slug!, projectSlug!, assignmentId, { status }),
+    mutationFn: ({ useCaseId, status }: { useCaseId: string; status: string }) =>
+      teamsApi.updateUseCaseStatus(slug!, projectSlug!, useCaseId, status, selectedSprint || undefined),
+    onSuccess: refresh,
+  });
+
+  const assigneeMutation = useMutation({
+    mutationFn: ({ assignmentId, userId }: { assignmentId: string; userId: number | null }) =>
+      teamsApi.updateSprintCase(slug!, projectSlug!, assignmentId, { assigned_user_id: userId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
+      refresh();
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignableMembers(slug, projectSlug) });
     },
   });
 
   const jiraTicketMutation = useMutation({
-    mutationFn: ({ assignmentId, jiraTicket }: { assignmentId: string; jiraTicket: string }) =>
-      teamsApi.updateSprintCase(slug!, projectSlug!, assignmentId, { jira_ticket: jiraTicket }),
+    mutationFn: ({ useCaseId, jiraTicket }: { useCaseId: string; jiraTicket: string }) =>
+      teamsApi.updateUseCaseJiraTicket(slug!, projectSlug!, useCaseId, jiraTicket),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) });
       queryClient.invalidateQueries({ queryKey: queryKeys.ucDetail(slug, projectSlug, detailAssignmentId) });
@@ -178,7 +183,7 @@ export default function SprintBoardPage() {
 
   const saveTicketMutation = useMutation({
     mutationFn: (data: SprintCaseDraft) => teamsApi.createSprintCase(slug!, projectSlug!, selectedSprint as string, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }); setTicketEditor(null); },
+    onSuccess: () => { refresh(); setTicketEditor(null); },
   });
   const saveAssignmentMutation = useMutation({
     mutationFn: (assignment: UseCaseAssignment) => teamsApi.updateSprintCase(slug!, projectSlug!, assignment.id, {
@@ -186,16 +191,55 @@ export default function SprintBoardPage() {
       description: assignment.description, preconditions: assignment.preconditions,
       steps: assignment.steps, expected_results: assignment.expected_results,
       observed_results: assignment.observed_results, status: assignment.status,
-      assigned_to: assignment.assigned_to,
+      // Seulement si l'assigné change : évite d'ajouter inutilement un membre au projet.
+      ...(editorAssignee !== (assignment.assigned_to_user?.id ?? null) ? { assigned_user_id: editorAssignee } : {}),
     }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }); setAssignmentEditor(null); },
+    onSuccess: () => { refresh(); queryClient.invalidateQueries({ queryKey: queryKeys.ucDetail(slug, projectSlug, detailAssignmentId) }); setAssignmentEditor(null); },
   });
   const deleteAssignmentMutation = useMutation({
     mutationFn: (assignmentId: string) => teamsApi.deleteAssignment(slug!, projectSlug!, assignmentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.sprintBoard(slug, projectSlug, selectedSprint) }),
+    onSuccess: refresh,
   });
 
   const currentSprint = sprints?.results?.find(s => s.id === selectedSprint);
+  // Un sprint terminé conserve ses résultats : il faut le rouvrir pour les modifier.
+  const isFrozen = currentSprint?.status === 'completed' || currentSprint?.status === 'closed';
+  const canEditResults = canWrite && !isFrozen;
+  const boardError = saveTicketMutation.error || saveAssignmentMutation.error || deleteAssignmentMutation.error
+    || statusMutation.error || assigneeMutation.error || jiraTicketMutation.error || uploadScreenshotMutation.error
+    || deleteScreenshotMutation.error || commentMutation.error;
+
+  const handleColumnDrop = (e: React.DragEvent, targetCol: string) => {
+    e.preventDefault();
+    const assignmentId = e.dataTransfer.getData('assignmentId');
+    const sourceCol = e.dataTransfer.getData('sourceCol');
+
+    if (!assignmentId || !targetCol || !sourceCol || targetCol === sourceCol) return;
+
+    const assignment = board?.columns[sourceCol]?.find(a => a.id === assignmentId);
+    if (assignment && canEditResults) statusMutation.mutate({ useCaseId: assignment.use_case, status: targetCol });
+  };
+
+  const downloadReport = async () => {
+    setReportError('');
+    setReportLoading(true);
+    try {
+      await teamsApi.downloadProjectReport(slug!, projectSlug!, [selectedSprint]);
+    } catch (error: unknown) {
+      setReportError(getApiErrorMessage(error, 'Impossible de télécharger le rapport.'));
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const sendReportMutation = useMutation({
+    mutationFn: () => teamsApi.sendSprintReport(slug!, projectSlug!, selectedSprint),
+    onSuccess: ({ recipients }) => setNotice(`Rapport en cours d’envoi à ${recipients} responsable${recipients > 1 ? 's' : ''}.`),
+  });
+
+  const memberOptions = members?.results?.map(m => (
+    <option key={m.user.id} value={m.user.id}>{m.user.full_name}{m.in_project ? '' : ' (équipe)'}</option>
+  ));
 
   return (
     <PageLayout>
@@ -205,18 +249,32 @@ export default function SprintBoardPage() {
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
             Retour au projet
           </button>
-          <h1 className="text-headline-lg font-bold text-on-surface">Tableau Sprint</h1>
+          <h1 className="whitespace-nowrap text-headline-lg font-bold text-on-surface">Tableau Sprint</h1>
         </div>
         <div className="flex flex-wrap gap-2 sm:justify-end">
           {selectedSprint && (
-            <Button variant="secondary" size="sm" onClick={() => teamsApi.exportSprintCSV(slug!, projectSlug!, selectedSprint)}>
-              Exporter CSV
-            </Button>
+            <>
+              <Button variant="secondary" size="sm" onClick={() => teamsApi.exportSprintCSV(slug!, projectSlug!, selectedSprint)}>
+                Exporter CSV
+              </Button>
+              <Button variant="secondary" size="sm" onClick={downloadReport} loading={reportLoading}>
+                📄 Rapport PDF
+              </Button>
+              {canEditResults && currentSprint && (
+                <Button variant="secondary" size="sm" onClick={() => setImporting(true)}>⬆️ Importer des résultats</Button>
+              )}
+              {canManage && currentSprint && (
+                <>
+                  <Button variant="secondary" size="sm" loading={sendReportMutation.isPending} onClick={() => sendReportMutation.mutate()}>✉️ Envoyer le rapport</Button>
+                  <Button variant="secondary" size="sm" onClick={() => setCarryingOver(true)}>↪ Reporter les cas</Button>
+                </>
+              )}
+            </>
           )}
         {canManage && (
             <>
               <Button variant="secondary" size="sm" onClick={() => setShowCreateModal(true)}>+ Nouveau sprint</Button>
-              <Button size="sm" onClick={() => setShowAssignModal(true)} disabled={!selectedSprint}>+ Assigner des cas</Button>
+              <Button size="sm" onClick={() => setShowAssignModal(true)} disabled={!selectedSprint || isFrozen}>+ Assigner des cas</Button>
             </>
           )}
         </div>
@@ -232,12 +290,12 @@ export default function SprintBoardPage() {
         {sprints?.results?.map(s => (
           <button
             key={s.id}
-            onClick={() => setSelectedSprint(s.id)}
+            onClick={() => { setSelectedSprint(s.id); setNotice(''); }}
             className={`px-3 py-1.5 rounded-lg text-body-sm transition-all ${selectedSprint === s.id ? 'bg-primary text-white' : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container'}`}
           >
             {s.name}
             <Badge variant={s.status === 'active' ? 'success' : s.status === 'completed' ? 'info' : 'default'} className="ml-1.5">
-              {s.status}
+              {SPRINT_STATUS_LABELS[s.status]}
             </Badge>
           </button>
         ))}
@@ -249,28 +307,32 @@ export default function SprintBoardPage() {
             <div className="flex items-start justify-between mb-2">
               <div>
                 <h2 className="text-headline-md font-bold text-on-surface">{currentSprint.name}</h2>
+                {currentSprint.kind === 'regression' && <Badge variant="warning">🔁 Non-régression</Badge>}
                 {currentSprint.goal && <p className="text-body-sm text-on-surface-variant mt-1">{currentSprint.goal}</p>}
               </div>
-              <Badge variant={currentSprint.status === 'active' ? 'success' : currentSprint.status === 'completed' ? 'info' : 'default'}>
-                {currentSprint.status}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={currentSprint.status === 'active' ? 'success' : currentSprint.status === 'completed' ? 'info' : 'default'}>
+                  {SPRINT_STATUS_LABELS[currentSprint.status]}
+                </Badge>
+                {canManage && <Button variant="secondary" size="sm" onClick={() => setEditingSprint(true)}>✏️ Modifier le sprint</Button>}
+              </div>
             </div>
             <p className="text-body-sm text-on-surface-variant">
               {currentSprint.start_date} → {currentSprint.end_date} ({currentSprint.duration_days} jours)
+              {currentSprint.report_sent_at && ` · rapport envoyé le ${new Date(currentSprint.report_sent_at).toLocaleDateString('fr-FR')}`}
             </p>
             {currentSprint.stats && currentSprint.stats.total > 0 && (
               <div className="mt-3 flex items-center gap-4 flex-wrap">
                 <div className="flex-1 h-2 rounded-full bg-surface-container-high overflow-hidden flex">
                   {STATUS_COLUMNS.map(s => {
-                    const key = s === 'À tester' ? 'not_run' : s === 'En cours' ? 'in_progress' : s.toLowerCase() as keyof typeof currentSprint.stats;
-                    const count = currentSprint.stats![key] as number || 0;
+                    const count = currentSprint.stats![STATUS_STAT_KEYS[s]] || 0;
                     const pct = currentSprint.stats!.total > 0 ? (count / currentSprint.stats!.total) * 100 : 0;
                     if (pct === 0) return null;
                     return <div key={s} className={`h-full ${STATUS_COLORS[s]}`} style={{ width: `${pct}%` }} title={`${s}: ${count}`} />;
                   })}
                 </div>
                 <span className="text-label-sm font-mono text-on-surface-variant">
-                  {currentSprint.stats.passed}/{currentSprint.stats.total} ({currentSprint.stats.progress_pct}%)
+                  {currentSprint.stats.passed}/{currentSprint.stats.total} passés — avancement {currentSprint.stats.progress_pct}%
                 </span>
               </div>
             )}
@@ -279,7 +341,10 @@ export default function SprintBoardPage() {
       )}
 
       {!!selectedSprint && <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-3"><p className="text-body-sm text-on-surface-variant">Les tickets sont intégrés aux colonnes du sprint. Glissez une carte pour changer son statut.</p><input type="search" aria-label="Rechercher un ticket par numéro" placeholder="Rechercher par numéro de ticket" value={ticketQuery} onChange={e => setTicketQuery(e.target.value)} className="w-full sm:w-80 min-w-0 border border-outline-variant rounded-lg px-3 py-2 bg-surface text-on-surface" /></div>}
-      {(saveTicketMutation.isError || saveAssignmentMutation.isError || deleteAssignmentMutation.isError || statusMutation.isError) && <p role="alert" className="mb-3 text-error">{getApiErrorMessage(saveTicketMutation.error || saveAssignmentMutation.error || deleteAssignmentMutation.error || statusMutation.error, 'Échec de l’opération sur le cas.')}</p>}
+      {isFrozen && <p role="status" className="mb-3 rounded-lg bg-info-container px-3 py-2 text-body-sm text-on-info-container">Sprint terminé : ses résultats sont figés. Rouvrez-le (« Modifier le sprint ») pour les modifier.</p>}
+      {notice && <p role="status" className="mb-3 rounded-lg bg-success-container px-3 py-2 text-body-sm text-on-success-container">{notice}</p>}
+      {(reportError || sendReportMutation.isError) && <p role="alert" className="mb-3 text-error">{reportError || getApiErrorMessage(sendReportMutation.error)}</p>}
+      {boardError && <p role="alert" className="mb-3 text-error">{getApiErrorMessage(boardError, 'Échec de l’opération sur le cas.')}</p>}
 
       {boardLoading ? (
         <div className="animate-pulse flex gap-4 overflow-x-auto pb-3 xl:grid xl:grid-cols-5 xl:overflow-visible">
@@ -291,7 +356,7 @@ export default function SprintBoardPage() {
             <div key={col} className="bg-surface-container-low rounded-xl p-3 min-h-[400px] min-w-[min(85vw,320px)] sm:min-w-[300px] xl:min-w-0 snap-start" onDrop={(e) => handleColumnDrop(e, col)} onDragOver={(e) => e.preventDefault()}>
               <div className="flex items-center justify-between mb-3 px-1">
                 <h3 className="text-label-md font-bold text-on-surface">{col}</h3>
-                {canManage && <button type="button" aria-label={`Créer un cas dans ${col}`} onClick={() => setTicketEditor({ use_case_text: '', jira_ticket: '', description: '', preconditions: '', steps: '', expected_results: '', observed_results: '', status: col, assigned_to: null, comment: '' })} className="text-primary text-label-sm hover:underline">+ Créer</button>}
+                {canManage && !isFrozen && <button type="button" aria-label={`Créer un cas dans ${col}`} onClick={() => setTicketEditor({ use_case_text: '', jira_ticket: '', description: '', preconditions: '', steps: '', expected_results: '', observed_results: '', status: col, assigned_user_id: null, comment: '' })} className="text-primary text-label-sm hover:underline">+ Créer</button>}
                 <span className="text-body-sm text-on-surface-variant font-mono">
                   {(board.columns[col]?.length || 0)}
                 </span>
@@ -299,7 +364,7 @@ export default function SprintBoardPage() {
               <div className="space-y-2">
                 {(board.columns[col] || []).filter(a => !ticketQuery.trim() || `${a.ticket_number} CAS-${String(a.case_number).padStart(3, '0')} ${a.use_case_text} ${a.jira_ticket || ''}`.toLowerCase().includes(ticketQuery.trim().toLowerCase())).map((assignment) => {
                   const statusColorMap: Record<string, string> = {
-                    'À tester': 'bg-outline-variant text-on-surface-variant',
+                    'À tester': 'bg-surface-container-high text-on-surface',
                     'En cours': 'bg-primary text-white',
                     'Passé': 'bg-success text-white',
                     'Échoué': 'bg-error text-white',
@@ -308,7 +373,7 @@ export default function SprintBoardPage() {
 return (
                     <div key={assignment.id} className="min-w-0 bg-surface border border-outline-variant rounded-lg p-3 cursor-grab draggable"
                      onClick={(e) => { e.stopPropagation(); setDetailAssignmentId(assignment.id); }}
-                     draggable={true}
+                     draggable={canEditResults}
                      onDragStart={(e) => {
                        e.dataTransfer.setData('assignmentId', assignment.id);
                        e.dataTransfer.setData('sourceCol', col);
@@ -319,13 +384,20 @@ return (
                       <span className="text-label-sm font-bold text-primary shrink-0">
                         CAS-{String(assignment.case_number).padStart(3, '0')}
                       </span>
-                      <span className={`px-1.5 py-0.5 rounded text-[0.625rem] font-bold uppercase tracking-wider shrink-0 ${statusColorMap[assignment.status] || 'bg-outline-variant text-on-surface-variant'}`}>
+                      <span className={`px-1.5 py-0.5 rounded text-[0.625rem] font-bold uppercase tracking-wider shrink-0 ${statusColorMap[assignment.status] || 'bg-surface-container-high text-on-surface'}`}>
                         {assignment.status}
                       </span>
                     </div>
                     <p className="text-body-sm text-on-surface line-clamp-2 mb-2.5 leading-snug">
                       {assignment.use_case_id_str || assignment.use_case_desc}
                     </p>
+                    {assignment.carried_from_name && <p className="mb-2 truncate text-body-xs text-on-surface-variant" title={`Reporté de ${assignment.carried_from_name}`}>↪ {assignment.carried_from_name}</p>}
+                    {(assignment.is_regression || !!assignment.open_defects_count) && (
+                      <div className="mb-2.5 flex flex-wrap gap-1.5">
+                        {assignment.is_regression && <Badge variant="warning">↩ Régression</Badge>}
+                        {!!assignment.open_defects_count && <Badge variant="error">🐛 {assignment.open_defects_count} anomalie{assignment.open_defects_count > 1 ? 's' : ''}</Badge>}
+                      </div>
+                    )}
                     {assignment.jira_ticket ? (
                       <div className="mb-2.5 flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-[0.875rem] text-primary">link</span>
@@ -340,22 +412,40 @@ return (
                         </a>
                       </div>
                     ) : null}
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="w-4 h-4 rounded-full bg-primary/20 text-primary text-[0.5rem] font-bold flex items-center justify-center shrink-0">
                           {(assignment.assigned_to_user?.full_name || '?')[0]}
                         </span>
-                        <span className="text-body-xs text-on-surface-variant truncate">
-                          {assignment.assigned_to_user?.full_name || 'Non assigné'}
-                        </span>
+                        {canManage ? (
+                          <select
+                            aria-label={`Assigner ${caseLabel(assignment.case_number)}`}
+                            value={assignment.assigned_to_user?.id ?? ''}
+                            disabled={assigneeMutation.isPending}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => assigneeMutation.mutate({ assignmentId: assignment.id, userId: toUserId(e.target.value) })}
+                            className="min-w-0 flex-1 truncate rounded border border-outline-variant bg-surface px-1.5 py-1 text-body-xs text-on-surface-variant"
+                          >
+                            <option value="">Non assigné</option>
+                            {assignment.assigned_to_user && !members?.results?.some(m => m.user.id === assignment.assigned_to_user?.id) && (
+                              <option value={assignment.assigned_to_user.id}>{assignment.assigned_to_user.full_name}</option>
+                            )}
+                            {memberOptions}
+                          </select>
+                        ) : (
+                          <span className="text-body-xs text-on-surface-variant truncate">
+                            {assignment.assigned_to_user?.full_name || 'Non assigné'}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {canManage && (
+                        {canEditResults && (
                           <select
+                            aria-label={`Statut de ${caseLabel(assignment.case_number)}`}
                             value={assignment.status}
                             onClick={e => e.stopPropagation()}
-                            onChange={(e) => { e.stopPropagation(); statusMutation.mutate({ assignmentId: assignment.id, status: e.target.value }); }}
-                            className="text-[0.6rem] bg-transparent border border-outline-variant rounded px-1 py-0.5"
+                            onChange={(e) => { e.stopPropagation(); statusMutation.mutate({ useCaseId: assignment.use_case, status: e.target.value }); }}
+                            className="w-full text-body-xs bg-surface border border-outline-variant rounded px-1.5 py-1"
                           >
                             {STATUS_COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
@@ -363,7 +453,7 @@ return (
                       </div>
                     </div>
                     {canManage && <div className="flex justify-end gap-2 mt-2">
-                      <button type="button" aria-label={`Modifier CAS-${String(assignment.case_number).padStart(3, '0')}`} title="Modifier ce cas" onClick={e => { e.stopPropagation(); setAssignmentEditor({ ...assignment }); }} className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg border border-outline-variant px-2 text-primary hover:bg-primary-fixed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                      <button type="button" aria-label={`Modifier CAS-${String(assignment.case_number).padStart(3, '0')}`} title="Modifier ce cas" onClick={e => { e.stopPropagation(); setAssignmentEditor({ ...assignment }); setEditorAssignee(assignment.assigned_to_user?.id ?? null); }} className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg border border-outline-variant px-2 text-primary hover:bg-primary-fixed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                         <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L8 18l-4 1 1-4Z"/></svg><span className="hidden sm:inline text-label-sm">Modifier</span>
                       </button>
                       <button type="button" aria-label={`Supprimer CAS-${String(assignment.case_number).padStart(3, '0')}`} title="Supprimer ce cas" disabled={deleteAssignmentMutation.isPending} onClick={e => { e.stopPropagation(); if (window.confirm(`Supprimer CAS-${String(assignment.case_number).padStart(3, '0')} de la recette et de tous les sprints ?`)) deleteAssignmentMutation.mutate(assignment.id); }} className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg border border-error/40 px-2 text-error hover:bg-error-container/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error disabled:opacity-50">
@@ -421,6 +511,7 @@ return (
             </div>
           </div>
         </div>
+        {createSprintMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(createSprintMutation.error, 'Création impossible.')}</p>}
         <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end mt-6 [&>button]:w-full sm:[&>button]:w-auto">
           <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
             Annuler
@@ -445,10 +536,9 @@ return (
             <select id="assign-member" value={assignData.user_id} onChange={e => setAssignData(p => ({ ...p, user_id: Number(e.target.value) }))}
                     className="w-full border border-outline-variant rounded-lg bg-surface px-3 py-2.5 outline-none focus:border-primary">
               <option value={0}>Sélectionner…</option>
-              {members?.results?.map((m: ProjectMember) => (
-                <option key={m.user.id} value={m.user.id}>{m.user.full_name}</option>
-              ))}
+              {memberOptions}
             </select>
+            <p className="mt-1 text-body-xs text-on-surface-variant">Tous les membres de l’équipe sont proposés ; ceux marqués « (équipe) » rejoindront automatiquement le projet.</p>
           </div>
           <div>
             <label className="text-label-md text-on-surface-variant block mb-1">Cas non assignés ({unassigned?.results?.length || 0})</label>
@@ -468,6 +558,7 @@ return (
             </div>
           </div>
         </div>
+        {assignMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(assignMutation.error, 'Assignation impossible.')}</p>}
         <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end mt-6 [&>button]:w-full sm:[&>button]:w-auto">
           <Button variant="secondary" onClick={() => setShowAssignModal(false)}>
             Annuler
@@ -491,7 +582,7 @@ return (
           <label className="text-label-md md:col-span-2">Résultats observés<textarea value={ticketEditor.observed_results ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, observed_results: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md md:col-span-2">Commentaire initial<textarea value={ticketEditor.comment} onChange={e => setTicketEditor(t => t && ({ ...t, comment: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md">Statut Kanban<select value={ticketEditor.status ?? 'À tester'} onChange={e => setTicketEditor(t => t && ({ ...t, status: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{STATUS_COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}</select></label>
-          <label className="text-label-md">Assigné à<select value={ticketEditor.assigned_to ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, assigned_to: e.target.value || null }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{members?.results?.map(m => <option key={m.id} value={m.id}>{m.user.full_name}</option>)}</select></label>
+          <label className="text-label-md">Assigné à<select value={ticketEditor.assigned_user_id ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, assigned_user_id: toUserId(e.target.value) }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{memberOptions}</select></label>
         </div>}
         {saveTicketMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(saveTicketMutation.error, 'Enregistrement impossible.')}</p>}
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-5 [&>button]:w-full sm:[&>button]:w-auto"><Button variant="secondary" onClick={() => setTicketEditor(null)}>Annuler</Button><Button disabled={!canManage || !ticketEditor?.use_case_text.trim() || saveTicketMutation.isPending} onClick={() => ticketEditor && saveTicketMutation.mutate(ticketEditor)}>{saveTicketMutation.isPending ? 'Enregistrement…' : 'Enregistrer le cas'}</Button></div>
@@ -509,7 +600,7 @@ return (
           <label className="text-label-md md:col-span-2">Étapes<textarea value={assignmentEditor.steps || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, steps: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md md:col-span-2">Résultats attendus<textarea value={assignmentEditor.expected_results || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, expected_results: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md md:col-span-2">Résultats observés<textarea value={assignmentEditor.observed_results || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, observed_results: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
-          <label className="text-label-md md:col-span-2">Assigné à<select value={assignmentEditor.assigned_to || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, assigned_to: e.target.value || null }))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{members?.results?.map(m => <option key={m.id} value={m.id}>{m.user.full_name}</option>)}</select></label>
+          <label className="text-label-md md:col-span-2">Assigné à<select value={editorAssignee ?? ''} onChange={e => setEditorAssignee(toUserId(e.target.value))} className="mt-1 w-full border rounded-lg p-2 bg-surface"><option value="">Non assigné</option>{memberOptions}</select></label>
         </div>}
         {saveAssignmentMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(saveAssignmentMutation.error, 'Modification impossible.')}</p>}
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-5 [&>button]:w-full sm:[&>button]:w-auto"><Button variant="secondary" onClick={() => setAssignmentEditor(null)}>Annuler</Button><Button disabled={!canManage || saveAssignmentMutation.isPending} onClick={() => assignmentEditor && saveAssignmentMutation.mutate(assignmentEditor)}>{saveAssignmentMutation.isPending ? 'Enregistrement…' : 'Enregistrer'}</Button></div>
@@ -531,14 +622,46 @@ return (
             commentMutation.mutate({ ucId: selectedAssignment.use_case, content })
           }
           onSaveJira={(value) =>
-            jiraTicketMutation.mutate({ assignmentId: selectedAssignment.id, jiraTicket: value })
+            jiraTicketMutation.mutate({ useCaseId: selectedAssignment.use_case, jiraTicket: value })
           }
           isSavingJira={jiraTicketMutation.isPending}
           ucComment={ucComment}
           onCommentChange={setUcComment}
           isUploading={uploadScreenshotMutation.isPending}
           fileInputRef={fileInputRef}
-          currentUserId={currentUser?.id}
+          canWrite={canWrite}
+          onReportDefect={() => { setDefectCase(selectedAssignment); setDetailAssignmentId(null); }}
+        />
+      )}
+
+      {editingSprint && currentSprint && (
+        <SprintEditModal teamSlug={slug!} projectSlug={projectSlug!} sprint={currentSprint} onClose={() => setEditingSprint(false)} />
+      )}
+      {carryingOver && currentSprint && (
+        <CarryOverModal
+          teamSlug={slug!}
+          projectSlug={projectSlug!}
+          sprint={currentSprint}
+          sprints={sprints?.results ?? []}
+          onClose={() => setCarryingOver(false)}
+          onDone={target => { setCarryingOver(false); setSelectedSprint(target.id); setNotice(`Cas reportés vers « ${target.name} ».`); }}
+        />
+      )}
+      {importing && currentSprint && (
+        <ImportResultsModal
+          teamSlug={slug!}
+          projectSlug={projectSlug!}
+          sprintId={currentSprint.id}
+          sprintName={currentSprint.name}
+          onClose={() => setImporting(false)}
+        />
+      )}
+      {defectCase && (
+        <DefectFormModal
+          teamSlug={slug!}
+          projectSlug={projectSlug!}
+          initial={{ sprint: selectedSprint, use_case: defectCase.use_case, is_regression: !!defectCase.is_regression }}
+          onClose={() => setDefectCase(null)}
         />
       )}
     </PageLayout>
@@ -548,7 +671,7 @@ return (
 function UseCaseDetailModal({
   assignment, detail, isLoading,
   onClose, onUploadScreenshot, onDeleteScreenshot, onAddComment, onSaveJira, isSavingJira,
-  ucComment, onCommentChange, isUploading, fileInputRef,
+  ucComment, onCommentChange, isUploading, fileInputRef, canWrite, onReportDefect,
 }: {
   assignment: UseCaseAssignment;
   detail?: UseCaseDetail;
@@ -563,7 +686,8 @@ function UseCaseDetailModal({
   onCommentChange: (v: string) => void;
   isUploading: boolean;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
-  currentUserId?: number;
+  canWrite: boolean;
+  onReportDefect: () => void;
 }) {
   const [screenshotCaption, setScreenshotCaption] = useState('');
   const [jiraValue, setJiraValue] = useState(assignment.jira_ticket || '');
@@ -612,7 +736,7 @@ function UseCaseDetailModal({
           <div className="grid grid-cols-2 gap-4 text-body-sm">
             <div>
               <span className="text-on-surface-variant font-medium">Assigné à :</span>
-              <span className="ml-2 text-on-surface">{assignment.assigned_to_user?.full_name}</span>
+              <span className="ml-2 text-on-surface">{assignment.assigned_to_user?.full_name || 'Non assigné'}</span>
             </div>
             <div>
               <span className="text-on-surface-variant font-medium">Statut :</span>
@@ -628,12 +752,29 @@ function UseCaseDetailModal({
                 value={jiraValue}
                 onChange={e => setJiraValue(e.target.value)}
                 onBlur={handleJiraBlur}
+                disabled={!canWrite}
                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                 placeholder="Ex : QA-123"
                 className="flex-1 text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/40 border border-outline-variant"
               />
               {isSavingJira && <span className="text-body-xs text-on-surface-variant animate-pulse">⏳ Enregistrement…</span>}
             </div>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-label-md font-bold text-on-surface-variant">Anomalies liées ({assignment.defects?.length ?? 0})</span>
+              {canWrite && <Button size="sm" variant="secondary" onClick={onReportDefect}>🐛 Signaler une anomalie</Button>}
+            </div>
+            {assignment.is_regression && <p className="mb-2 text-body-sm text-warning">↩ Ce cas passait auparavant : il s’agit d’une régression.</p>}
+            {assignment.defects?.map(d => (
+              <div key={d.id} className="mb-1.5 flex flex-wrap items-center gap-2 rounded-lg bg-surface-container-low px-3 py-2 text-body-sm">
+                <span className="font-mono text-on-surface-variant">{d.ticket_number}</span>
+                <span className="min-w-0 flex-1 text-on-surface">{d.title}</span>
+                <Badge variant={SEVERITIES[d.severity].variant}>{SEVERITIES[d.severity].label}</Badge>
+                <Badge variant={DEFECT_STATUS[d.status].variant}>{DEFECT_STATUS[d.status].label}</Badge>
+              </div>
+            ))}
           </div>
 
           <div>
@@ -710,7 +851,7 @@ function UseCaseDetailModal({
                   className="hidden"
                   onChange={handleFileChange}
                 />
-                <Button size="sm" onClick={() => fileInputRef.current?.click()} loading={isUploading}>
+                <Button size="sm" disabled={!canWrite} onClick={() => fileInputRef.current?.click()} loading={isUploading}>
                   + Ajouter
                 </Button>
               </div>
@@ -723,6 +864,8 @@ function UseCaseDetailModal({
                     {ss.caption && <p className="text-body-xs text-on-surface-variant px-2 py-1 truncate">{ss.caption}</p>}
                     <p className="text-body-xs text-on-surface-variant px-2 pb-1">{ss.uploaded_by_user?.full_name}</p>
                     <button
+                      aria-label="Supprimer la capture"
+                      hidden={!canWrite}
                       onClick={() => onDeleteScreenshot(ss.id)}
                       className="absolute top-1 right-1 w-6 h-6 rounded-full bg-error/80 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center"
                     >✕</button>
