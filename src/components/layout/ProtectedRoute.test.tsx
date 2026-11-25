@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProtectedRoute } from './ProtectedRoute';
 
@@ -8,6 +8,11 @@ const mockUseAuth = vi.fn();
 vi.mock('../../context/AuthContext', () => ({
   useAuth: () => mockUseAuth(),
 }));
+
+function LoginProbe() {
+  const { pathname, search } = useLocation();
+  return <div>{pathname + search}</div>;
+}
 
 describe('ProtectedRoute', () => {
   beforeEach(() => {
@@ -43,5 +48,18 @@ describe('ProtectedRoute', () => {
       </MemoryRouter>
     );
     expect(screen.getByText('Protected Content')).toBeInTheDocument();
+  });
+
+  it.each([['/', '/login'], ['/teams/qa?tab=1', '/login?next=%2Fteams%2Fqa%3Ftab%3D1']])('sends %s to %s', (from, to) => {
+    mockUseAuth.mockReturnValue({ user: null, loading: false });
+    render(
+      <MemoryRouter initialEntries={[from]}>
+        <Routes>
+          <Route path="/login" element={<LoginProbe />} />
+          <Route path="*" element={<ProtectedRoute><div>Protected Content</div></ProtectedRoute>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(screen.getByText(to)).toBeInTheDocument();
   });
 });

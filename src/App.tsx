@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { SidebarProvider } from './context/SidebarContext';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
@@ -12,7 +12,6 @@ import { ToastProvider } from './components/ui/Toast';
 import { EmptyState } from './components/ui/EmptyState';
 import { Skeleton } from './components/ui/Skeleton';
 import { isRetryableApiError } from './lib/errors';
-import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 
@@ -69,12 +68,6 @@ const queryClient = new QueryClient({
   },
 });
 
-function HomeOrDashboard() {
-  const { user } = useAuth();
-  if (user) return <DashboardPage />;
-  return <HomePage />;
-}
-
 /** Squelette affiché pendant le chargement d'une route découpée (code splitting). */
 function RouteFallback() {
   return (
@@ -102,15 +95,15 @@ function AppRoutes() {
           <Route path="/register" element={<Suspense fallback={<RouteFallback />}><RegisterPage /></Suspense>} />
           <Route path="/forgot-password" element={<Suspense fallback={<RouteFallback />}><ForgotPasswordPage /></Suspense>} />
           <Route path="/reset-password/:uidb64/:token/" element={<Suspense fallback={<RouteFallback />}><ResetPasswordPage /></Suspense>} />
-          <Route path="/" element={<HomeOrDashboard />} />
-          <Route path="/convert" element={<Suspense fallback={<RouteFallback />}><ConvertPage /></Suspense>} />
+          <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/convert" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><ConvertPage /></Suspense></ProtectedRoute>} />
           <Route path="/preview/:id" element={<Suspense fallback={<RouteFallback />}><PreviewPage /></Suspense>} />
           {ComponentsPage && (
             <Route path="/components" element={<Suspense fallback={null}><ComponentsPage /></Suspense>} />
           )}
-          <Route path="/recipes" element={<Suspense fallback={<RouteFallback />}><RecipesPage /></Suspense>} />
-          <Route path="/suites" element={<Suspense fallback={<RouteFallback />}><TestSuitesPage /></Suspense>} />
-          <Route path="/recherche" element={<Suspense fallback={<RouteFallback />}><SearchPage /></Suspense>} />
+          <Route path="/recipes" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><RecipesPage /></Suspense></ProtectedRoute>} />
+          <Route path="/suites" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><TestSuitesPage /></Suspense></ProtectedRoute>} />
+          <Route path="/recherche" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><SearchPage /></Suspense></ProtectedRoute>} />
           <Route path="/invitation/:token" element={<Suspense fallback={<RouteFallback />}><InvitationPage /></Suspense>} />
 
           {/* Protected routes (require auth) */}

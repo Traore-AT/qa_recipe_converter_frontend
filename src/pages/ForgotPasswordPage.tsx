@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { authApi } from '../api/auth';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { Button } from '../components/ui/Button';
+import { FormError } from '../components/ui/FormError';
 import { Input } from '../components/ui/Input';
 
 export default function ForgotPasswordPage() {
@@ -54,13 +55,8 @@ export default function ForgotPasswordPage() {
           onChange={e => setEmail(e.target.value)}
           required
         />
-        {error && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-error-container text-error text-body-sm">
-            <span className="material-symbols-outlined text-lg shrink-0">error</span>
-            {error}
-          </div>
-        )}
-        <Button type="submit" loading={loading} className="w-full">
+        <FormError message={error} />
+        <Button type="submit" size="lg" loading={loading} className="w-full">
           Envoyer le lien
         </Button>
         <p className="text-center text-body-sm text-on-surface-variant">
