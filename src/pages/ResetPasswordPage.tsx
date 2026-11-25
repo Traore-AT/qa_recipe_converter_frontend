@@ -3,14 +3,14 @@ import { useParams, Link } from 'react-router-dom';
 import { authApi } from '../api/auth';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
+import { FormError } from '../components/ui/FormError';
+import { PasswordInput } from '../components/ui/PasswordInput';
 import { getApiErrorMessage } from '../lib/errors';
 
 export default function ResetPasswordPage() {
   const { uidb64, token } = useParams<{ uidb64: string; token: string }>();
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -60,41 +60,27 @@ export default function ResetPasswordPage() {
   return (
     <AuthLayout title="Nouveau mot de passe" subtitle="Choisissez un nouveau mot de passe sécurisé">
       <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="relative">
-          <Input
-            label="Nouveau mot de passe"
-            type={showPassword ? 'text' : 'password'}
-            placeholder="••••••••"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-            minLength={8}
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-[38px] text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
-            tabIndex={-1}
-          >
-            <span className="material-symbols-outlined text-lg">{showPassword ? 'visibility_off' : 'visibility'}</span>
-          </button>
-        </div>
-        <Input
+        <PasswordInput
+          label="Nouveau mot de passe"
+          placeholder="••••••••"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          autoComplete="new-password"
+          hint="8 caractères minimum"
+          required
+          minLength={8}
+        />
+        <PasswordInput
           label="Confirmer le mot de passe"
-          type={showPassword ? 'text' : 'password'}
+          autoComplete="new-password"
           placeholder="••••••••"
           value={passwordConfirm}
           onChange={e => setPasswordConfirm(e.target.value)}
           required
           minLength={8}
         />
-        {error && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-error-container text-error text-body-sm">
-            <span className="material-symbols-outlined text-lg shrink-0">error</span>
-            {error}
-          </div>
-        )}
-        <Button type="submit" loading={loading} className="w-full">
+        <FormError message={error} />
+        <Button type="submit" size="lg" loading={loading} className="w-full">
           Réinitialiser le mot de passe
         </Button>
       </form>

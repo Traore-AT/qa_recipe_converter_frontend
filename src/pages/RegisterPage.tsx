@@ -3,20 +3,22 @@ import { Navigate, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { Button } from '../components/ui/Button';
+import { FormError } from '../components/ui/FormError';
 import { Input } from '../components/ui/Input';
+import { PasswordInput } from '../components/ui/PasswordInput';
 import { getApiErrorMessage } from '../lib/errors';
+import { authLink, safeNext } from '../lib/redirect';
 
 export default function RegisterPage() {
-  const { user, loading: authLoading, register } = useAuth();
+  const { user, register } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const next = searchParams.get('next') || '/';
+  const next = safeNext(searchParams.get('next'));
   const [form, setForm] = useState({ username: '', email: '', password: '', password_confirm: '', first_name: '', last_name: '' });
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  if (authLoading) return null;
   if (user) {
     return <Navigate to={next} replace />;
   }
@@ -60,12 +62,12 @@ export default function RegisterPage() {
         </div>
         <Input label="Nom d'utilisateur" name="username" value={form.username} onChange={handleChange} error={fieldErrors.username} required />
         <Input label="Email" type="email" name="email" value={form.email} onChange={handleChange} error={fieldErrors.email} required />
-        <Input label="Mot de passe" type="password" name="password" value={form.password} onChange={handleChange} error={fieldErrors.password} required minLength={8} />
-        <Input label="Confirmer le mot de passe" type="password" name="password_confirm" value={form.password_confirm} onChange={handleChange} error={fieldErrors.password_confirm} required />
-        {error && <div className="flex items-center gap-2 p-3 rounded-lg bg-error-container text-error text-body-sm"><span className="material-symbols-outlined text-lg shrink-0">error</span>{error}</div>}
-        <Button type="submit" loading={loading} className="w-full">Créer mon compte</Button>
+        <PasswordInput label="Mot de passe" name="password" value={form.password} onChange={handleChange} error={fieldErrors.password} autoComplete="new-password" hint="8 caractères minimum" required minLength={8} />
+        <PasswordInput label="Confirmer le mot de passe" name="password_confirm" value={form.password_confirm} onChange={handleChange} error={fieldErrors.password_confirm} autoComplete="new-password" required />
+        <FormError message={error} />
+        <Button type="submit" size="lg" loading={loading} className="w-full">Créer mon compte</Button>
         <p className="text-center text-body-sm text-on-surface-variant">
-          Déjà un compte ? <Link to="/login" className="text-primary font-medium hover:underline">Se connecter</Link>
+          Déjà un compte ? <Link to={authLink('/login', next)} className="text-primary font-medium hover:underline">Se connecter</Link>
         </p>
       </form>
     </AuthLayout>

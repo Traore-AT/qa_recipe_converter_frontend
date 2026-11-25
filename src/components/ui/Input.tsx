@@ -38,9 +38,11 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
   hint?: ReactNode;
+  /** Élément affiché à droite dans le champ (ex. bouton). */
+  trailing?: ReactNode;
 }
 
-export function Input({ label, error, hint, className, id, ...rest }: InputProps) {
+export function Input({ label, error, hint, trailing, className, id, ...rest }: InputProps) {
   const generatedId = useId();
   const inputId = id || generatedId;
   const messageId = `${inputId}-message`;
@@ -51,13 +53,16 @@ export function Input({ label, error, hint, className, id, ...rest }: InputProps
           {label}
         </label>
       )}
-      <input
-        id={inputId}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error || hint ? messageId : undefined}
-        className={cn(fieldClasses, error && errorClasses, className)}
-        {...rest}
-      />
+      <div className="relative">
+        <input
+          id={inputId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error || hint ? messageId : undefined}
+          className={cn(fieldClasses, trailing && 'pr-12', error && errorClasses, className)}
+          {...rest}
+        />
+        {trailing && <div className="absolute inset-y-0 right-0.5 flex items-center">{trailing}</div>}
+      </div>
       <FieldMessage id={messageId} error={error} hint={hint} />
     </div>
   );
