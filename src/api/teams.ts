@@ -8,7 +8,7 @@ import type {
   WeeklyReport, ActivityLog, UseCaseComment, MemberProgress,
   UseCaseDetail, UseCaseScreenshot, AssignableMember, DefectComment, DefectHistoryEntry,
   Regression, ProjectPerformance, Evolution, TeamPerformanceRow,
-  QaSettings, CarryOverCase, CarryOverPayload, TestImportResult, JiraValidation,
+  QaSettings, CarryOverCase, CarryOverPayload, TestImportResult, JiraValidation, SprintImportPreview, SprintImportResult,
 } from '../types';
 
 /** Paramètre `sprints` de l'API : liste d'identifiants séparés par des virgules. */
@@ -132,6 +132,21 @@ export const teamsApi = {
     client.get<PaginatedResponse<{ id: string; order: number; case_number: number; ticket_number: string; use_case_text: string; description: string; status: string; jira_ticket?: string }> & { hidden_other_sprints?: number }>(
       `/teams/${teamSlug}/projects/${projectSlug}/unassigned-ucs/`, { params: sprintId ? { sprint: sprintId } : undefined }
     ).then(r => r.data),
+
+  /** Import de cas Word dans un sprint : aperçu (`dryRun`) puis création ; `userIds` vide = non assignés. */
+  previewSprintImport: (teamSlug: string, projectSlug: string, sprintId: string, file: File) => {
+    const body = new FormData();
+    body.append('word_file', file);
+    body.append('dry_run', 'true');
+    return client.post<SprintImportPreview>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/import-cases/`, body, { timeout: 120_000 }).then(r => r.data);
+  },
+
+  importSprintCases: (teamSlug: string, projectSlug: string, sprintId: string, file: File, userIds: number[]) => {
+    const body = new FormData();
+    body.append('word_file', file);
+    userIds.forEach(id => body.append('user_ids', String(id)));
+    return client.post<SprintImportResult>(`/teams/${teamSlug}/projects/${projectSlug}/sprints/${sprintId}/import-cases/`, body, { timeout: 120_000 }).then(r => r.data);
+  },
 
   /** Format puis existence (si Jira est configuré) de références Jira. */
   validateJiraTickets: (teamSlug: string, projectSlug: string, tickets: string[]) =>

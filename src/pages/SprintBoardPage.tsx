@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { teamsApi } from '../api/teams';
@@ -8,6 +8,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { AssignCasesModal } from '../components/qa/AssignCasesModal';
+import { SprintImportModal } from '../components/qa/SprintImportModal';
 import { CarryOverModal } from '../components/qa/CarryOverModal';
 import { ImportResultsModal } from '../components/qa/ImportResultsModal';
 import { DefectFormModal } from '../components/qa/DefectFormModal';
@@ -53,6 +54,14 @@ export default function SprintBoardPage() {
   const [editingSprint, setEditingSprint] = useState(false);
   const [carryingOver, setCarryingOver] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importingCases, setImportingCases] = useState(false);
+  // Cartes fraîchement importées, mises en évidence quelques secondes.
+  const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!highlighted.size) return;
+    const timer = setTimeout(() => setHighlighted(new Set()), 8000);
+    return () => clearTimeout(timer);
+  }, [highlighted]);
   const [notice, setNotice] = useState('');
   const [defectCase, setDefectCase] = useState<UseCaseAssignment | null>(null);
   const [reportError, setReportError] = useState('');
@@ -254,6 +263,10 @@ export default function SprintBoardPage() {
         {canManage && (
             <>
               <Button variant="secondary" size="sm" onClick={() => setShowCreateModal(true)}>+ Nouveau sprint</Button>
+              <Button variant="secondary" size="sm" onClick={() => setImportingCases(true)} disabled={!currentSprint || isFrozen}
+                      title={isFrozen ? 'Sprint terminé : rouvrez-le pour y importer des cas' : 'Importer les cas d’un document Word dans ce sprint'}>
+                📥 Importer des cas
+              </Button>
               <Button size="sm" onClick={() => setShowAssignModal(true)} disabled={!selectedSprint || isFrozen}>+ Assigner des cas</Button>
             </>
           )}
@@ -331,6 +344,17 @@ export default function SprintBoardPage() {
           {[...Array(5)].map((_, i) => <div key={i} className="h-96 min-w-[min(85vw,320px)] sm:min-w-[300px] xl:min-w-0 bg-surface-container-high rounded-xl" />)}
         </div>
       ) : board ? (
+        <>
+        {canManage && !isFrozen && !Object.values(board.columns).some(c => c.length) && (
+          <div className="mb-4 flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-outline-variant p-6 text-center">
+            <p className="text-body-base font-semibold text-on-surface">Ce sprint ne contient encore aucun cas de test.</p>
+            <p className="text-body-sm text-on-surface-variant">Importez le document Word de la recette : ses cas appartiendront uniquement à ce sprint.</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" onClick={() => setImportingCases(true)}>📥 Importer un document</Button>
+              <Button size="sm" variant="secondary" onClick={() => setShowAssignModal(true)}>Assigner des cas existants</Button>
+            </div>
+          </div>
+        )}
         <div className="flex gap-4 overflow-x-auto pb-3 snap-x snap-mandatory xl:grid xl:grid-cols-5 xl:overflow-visible xl:snap-none">
           {STATUS_COLUMNS.map(col => (
             <div key={col} className="bg-surface-container-low rounded-xl p-3 min-h-[400px] min-w-[min(85vw,320px)] sm:min-w-[300px] xl:min-w-0 snap-start" onDrop={(e) => handleColumnDrop(e, col)} onDragOver={(e) => e.preventDefault()}>
@@ -351,7 +375,7 @@ export default function SprintBoardPage() {
                     'Bloqué': 'bg-warning text-white',
                   };
 return (
-                    <div key={assignment.id} className="min-w-0 bg-surface border border-outline-variant rounded-lg p-3 cursor-grab draggable"
+                    <div key={assignment.id} data-highlighted={highlighted.has(assignment.id) || undefined} className={`min-w-0 bg-surface border rounded-lg p-3 cursor-grab draggable transition-shadow ${highlighted.has(assignment.id) ? 'border-primary ring-2 ring-primary/40' : 'border-outline-variant'}`}
                      onClick={(e) => { e.stopPropagation(); setDetailAssignmentId(assignment.id); }}
                      draggable={canEditResults}
                      onDragStart={(e) => {
@@ -457,6 +481,7 @@ return (
             </div>
           ))}
         </div>
+        </>
       ) : (
         <div className="text-center py-16">
           <p className="text-body-base text-on-surface-variant mb-4">
@@ -596,6 +621,23 @@ return (
           sprints={sprints?.results ?? []}
           onClose={() => setCarryingOver(false)}
           onDone={target => { setCarryingOver(false); setSelectedSprint(target.id); setNotice(`Cas reportés vers « ${target.name} ».`); }}
+        />
+      )}
+      {importingCases && currentSprint && (
+        <SprintImportModal
+          teamSlug={slug!}
+          projectSlug={projectSlug!}
+          sprint={currentSprint}
+          members={members?.results ?? []}
+          onClose={() => setImportingCases(false)}
+          onDone={result => {
+            setImportingCases(false);
+            setHighlighted(new Set(result.assignment_ids));
+            const split = result.distribution.filter(d => d.count).map(d => `${d.full_name} ${d.count}`).join(', ');
+            setNotice(`${result.imported} cas importé${result.imported > 1 ? 's' : ''} dans « ${currentSprint.name} »`
+              + (result.skipped.length ? ` · ${result.skipped.length} doublon${result.skipped.length > 1 ? 's' : ''} ignoré${result.skipped.length > 1 ? 's' : ''}` : '')
+              + (split ? ` · répartition : ${split}` : '') + '.');
+          }}
         />
       )}
       {importing && currentSprint && (

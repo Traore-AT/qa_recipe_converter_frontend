@@ -291,6 +291,23 @@ export interface JiraValidation {
   results: JiraTicketCheck[];
 }
 
+/** Aperçu d'import dans un sprint : analyse + doublons détectés ligne par ligne. */
+export interface SprintImportPreview extends ImportAnalysis {
+  rows: Array<{ row: number; title: string; jira_ticket: string; duplicate_of: number | null; duplicate_row: number | null }>;
+  new_cases: number;
+  duplicates: number;
+  sprint: { id: string; name: string };
+}
+
+export interface SprintImportResult {
+  imported: number;
+  skipped: SprintImportPreview['rows'];
+  job_id: string;
+  assignment_ids: string[];
+  case_numbers: number[];
+  distribution: Array<{ user_id: number; username: string; full_name: string; count: number }>;
+}
+
 /** Aperçu d'import d'un document Word (rien n'est enregistré). */
 export interface ImportAnalysis {
   tables: Array<{
