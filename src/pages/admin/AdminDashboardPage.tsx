@@ -14,6 +14,12 @@ import { Skeleton, SkeletonCard } from '../../components/ui/Skeleton';
 import { getApiErrorMessage } from '../../lib/errors';
 import { queryKeys } from '../../lib/queryKeys';
 import { fillDateSeries, formatDateTime, getInitial } from '../../lib/admin';
+import { AXIS_TICK, CHART_AXIS, CHART_GRID, CHART_SURFACE, SERIES_COLORS } from '../../lib/chart';
+import { rechartsTooltip } from '../../components/charts/rechartsTooltip';
+
+/** « 2026-11-28 » → « 28/11 » (axe) et « 28/11/2026 » (infobulle). */
+const shortDate = (value: string) => `${value.slice(8, 10)}/${value.slice(5, 7)}`;
+const longDate = (value: string) => `${value.slice(8, 10)}/${value.slice(5, 7)}/${value.slice(0, 4)}`;
 
 const KPI_COLORS = {
   users: '#3B82F6',
@@ -34,13 +40,6 @@ const NAV_ITEMS = [
   { to: '/admin/activity', icon: 'activity', label: 'Activité', description: "Journal d'audit" },
   { to: '/admin/system', icon: 'server', label: 'Système', description: 'Stockage et base de données' },
 ] as const;
-
-const CHART_TOOLTIP_STYLE = {
-  backgroundColor: 'var(--color-surface-container-lowest)',
-  border: '1px solid var(--color-outline-variant)',
-  borderRadius: 12,
-  fontSize: 13,
-} as const;
 
 export default function AdminDashboardPage() {
   const summary = useQuery({ queryKey: queryKeys.admin.summary(), queryFn: adminApi.getSummary });
@@ -139,17 +138,13 @@ export default function AdminDashboardPage() {
                 ) : stats.data ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={fillDateSeries(stats.data.conversions, 30)} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="conversionsFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={KPI_COLORS.jobs} stopOpacity={0.35} />
-                          <stop offset="95%" stopColor={KPI_COLORS.jobs} stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-outline-variant)" />
-                      <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-on-surface-variant)' }} tickFormatter={(value: string) => value.slice(5)} />
-                      <YAxis tick={{ fontSize: 11, fill: 'var(--color-on-surface-variant)' }} allowDecimals={false} />
-                      <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                      <Area type="monotone" dataKey="count" stroke={KPI_COLORS.jobs} fill="url(#conversionsFill)" strokeWidth={2} />
+                      <CartesianGrid vertical={false} stroke={CHART_GRID} />
+                      <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: CHART_AXIS }} minTickGap={24} tickFormatter={shortDate} />
+                      <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip cursor={{ stroke: CHART_AXIS, strokeWidth: 1 }}
+                               content={rechartsTooltip({ title: label => longDate(String(label)) })} />
+                      <Area type="monotone" dataKey="count" name="Conversions" stroke={SERIES_COLORS[0]} fill={SERIES_COLORS[0]}
+                            fillOpacity={0.1} strokeWidth={2} activeDot={{ r: 5, stroke: CHART_SURFACE, strokeWidth: 2 }} animationDuration={500} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : null}
@@ -167,11 +162,12 @@ export default function AdminDashboardPage() {
                 ) : stats.data ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={fillDateSeries(stats.data.users, 30)} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-outline-variant)" />
-                      <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-on-surface-variant)' }} tickFormatter={(value: string) => value.slice(5)} />
-                      <YAxis tick={{ fontSize: 11, fill: 'var(--color-on-surface-variant)' }} allowDecimals={false} />
-                      <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                      <Bar dataKey="count" fill={KPI_COLORS.users} radius={[4, 4, 0, 0]} />
+                      <CartesianGrid vertical={false} stroke={CHART_GRID} />
+                      <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: CHART_AXIS }} minTickGap={24} tickFormatter={shortDate} />
+                      <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip cursor={{ fill: 'var(--chart-grid)', fillOpacity: 0.5 }}
+                               content={rechartsTooltip({ title: label => longDate(String(label)), shape: 'square' })} />
+                      <Bar dataKey="count" name="Inscriptions" fill={SERIES_COLORS[0]} maxBarSize={24} radius={[4, 4, 0, 0]} animationDuration={500} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : null}
