@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { StatusPill } from '../components/ui/StatusPill';
 import { FileDropzone } from '../components/ui/FileDropzone';
 import { Modal } from '../components/ui/Modal';
+import { ImportAnalysisPanel } from '../components/qa/ImportAnalysisPanel';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { invalidateJobs, queryKeys } from '../lib/queryKeys';
@@ -227,6 +228,7 @@ export default function ConvertPage() {
                 <Button variant="ghost" size="sm" onClick={() => setFile(null)} className="mt-1">
                   Changer de fichier
                 </Button>
+                <div className="w-full"><ImportAnalysisPanel file={file} /></div>
               </div>
             ) : (
               <div className="space-y-3">

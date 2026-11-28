@@ -7,7 +7,7 @@ import { ThemeProvider } from '../context/ThemeContext';
 import PreviewPage from './PreviewPage';
 
 const { mockConversionApi, mockNavigate } = vi.hoisted(() => ({
-  mockConversionApi: { getJob: vi.fn(), batchSave: vi.fn(), openVscode: vi.fn(), generateExcel: vi.fn(), generateGherkin: vi.fn(), bulkUpdateStatus: vi.fn() },
+  mockConversionApi: { getJob: vi.fn(), batchSave: vi.fn(), openVscode: vi.fn(), generateExcel: vi.fn(), generateGherkin: vi.fn(), bulkUpdateStatus: vi.fn(), validateJira: vi.fn() },
   mockNavigate: vi.fn(),
 }));
 
@@ -54,6 +54,28 @@ describe('PreviewPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockConversionApi.getJob.mockResolvedValue(mockJobData);
+  });
+
+  it('flags malformed Jira tickets and checks them against Jira', async () => {
+    const withJira = { ...mockJobData, use_cases: [
+      { ...mockJobData.use_cases[0], jira_ticket: 'QA-1' },
+      { ...mockJobData.use_cases[1], jira_ticket: 'qa 2' },
+      { ...mockJobData.use_cases[2], jira_ticket: 'QA-404' },
+    ] };
+    mockConversionApi.getJob.mockResolvedValue(withJira);
+    mockConversionApi.validateJira.mockResolvedValue({ jira_checked: true, error: '', results: [
+      { ticket: 'QA-1', valid_format: true, exists: true, summary: 'Connexion' },
+      { ticket: 'qa 2', valid_format: false, exists: null, summary: '' },
+      { ticket: 'QA-404', valid_format: true, exists: false, summary: '' },
+    ] });
+    const user = userEvent.setup();
+    renderPage();
+    expect(await screen.findByText(/⚠ Format inattendu : qa 2/)).toBeInTheDocument();
+    expect(screen.getByText(/1 cas avec un ticket Jira à vérifier/)).toBeInTheDocument();
+    await user.click(screen.getByText('🔎 Vérifier les tickets Jira'));
+    expect(await screen.findByText('✘ Introuvable dans Jira : QA-404')).toBeInTheDocument();
+    expect(screen.getByText(/2 cas avec un ticket Jira à vérifier/)).toBeInTheDocument();
+    expect(mockConversionApi.validateJira).toHaveBeenCalledWith('job-123', ['QA-1', 'qa 2', 'QA-404']);
   });
 
   it('renders breadcrumb with filename', async () => {

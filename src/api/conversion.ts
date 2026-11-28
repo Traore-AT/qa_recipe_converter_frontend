@@ -1,5 +1,5 @@
 import client from './client';
-import type { ConversionJob, PaginatedResponse, ExtractedUseCase, BulkStatusUpdatePayload, BulkStatusUpdateResponse, FileSearchResponse } from '../types';
+import type { ConversionJob, PaginatedResponse, ExtractedUseCase, BulkStatusUpdatePayload, BulkStatusUpdateResponse, FileSearchResponse, ImportAnalysis, JiraValidation } from '../types';
 
 export const conversionApi = {
   upload: (
@@ -33,6 +33,17 @@ export const conversionApi = {
       .then((r) => r.data);
   },
 
+  /** Aperçu avant import : colonnes reconnues, cas et tickets Jira détectés (rien n'est enregistré). */
+  analyze: (wordFile: File) => {
+    const fd = new FormData();
+    fd.append('word_file', wordFile);
+    return client.post<ImportAnalysis>('/upload/analyze/', fd, { timeout: 120_000 }).then((r) => r.data);
+  },
+
+  /** Vérifie les tickets Jira d'une recette (tous ses cas si `tickets` est omis). */
+  validateJira: (jobId: string, tickets?: string[]) =>
+    client.post<JiraValidation>(`/jobs/${jobId}/jira/validate/`, tickets ? { tickets } : {}, { timeout: 60_000 }).then(r => r.data),
+
   listJobs: (page = 1, projectId?: string) =>
     client.get<PaginatedResponse<ConversionJob>>('/jobs/', { params: projectId ? { page, project: projectId } : { page } }).then((r) => r.data),
 
@@ -55,6 +66,7 @@ export const conversionApi = {
       observed_results?: string;
       is_automated?: boolean;
       status?: string;
+      jira_ticket?: string;
     }>;
   }) =>
     client.post<{ success: boolean; automated_count: number }>(`/jobs/${jobId}/save/`, data).then(r => r.data),

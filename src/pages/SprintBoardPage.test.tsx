@@ -32,6 +32,7 @@ const { mockTeamsApi, mockNavigate } = vi.hoisted(() => ({
     updateSprintCase: vi.fn(),
     deleteAssignment: vi.fn(),
     createUseCaseComment: vi.fn(),
+    validateJiraTickets: vi.fn(),
   },
   mockNavigate: vi.fn(),
 }));
@@ -264,6 +265,77 @@ describe('SprintBoardPage', () => {
     await user.click(await screen.findByLabelText('Sélectionner tous les cas'));
     await user.click(screen.getByText('✅ Assigner (2)'));
     await waitFor(() => expect(mockTeamsApi.createAssignments).toHaveBeenCalledWith('qa-team', 'qa-project', { use_case_ids: ['uc4', 'uc5'], sprint_id: 's1', user_id: 3 }));
+  });
+
+  it('explains that cases planned in other sprints are hidden from the assignment list', async () => {
+    mockTeamsApi.getUnassignedUseCases.mockResolvedValue({ count: 1, hidden_other_sprints: 3, results: [{ id: 'uc4', order: 4, case_number: 4, use_case_text: 'TC004', description: '', status: 'À tester' }] });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('+ Assigner des cas'));
+    expect(await screen.findByRole('note')).toHaveTextContent('3 cas déjà planifiés dans d’autres sprints sont masqués');
+    expect(mockTeamsApi.getUnassignedUseCases).toHaveBeenCalledWith('qa-team', 'qa-project', 's1');
+    expect(screen.getByText('Cas non assignés (1)')).toBeInTheDocument();
+  });
+
+  it('shows an empty state when no case is available for the sprint', async () => {
+    mockTeamsApi.getUnassignedUseCases.mockResolvedValue({ count: 0, hidden_other_sprints: 0, results: [] });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('+ Assigner des cas'));
+    expect(await screen.findByText('Aucun cas disponible pour ce sprint.')).toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('reports cases refused by the server after a bulk assignment', async () => {
+    mockTeamsApi.createAssignments.mockResolvedValue({ created: ['uc5'], count: 1, errors: ['CAS-004 est déjà planifié dans le sprint « Sprint 0 »'] });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('+ Assigner des cas'));
+    await user.selectOptions(screen.getByLabelText('Membre'), '3');
+    await user.click(await screen.findByLabelText('Sélectionner tous les cas'));
+    await user.click(screen.getByText('✅ Assigner (2)'));
+    expect(await screen.findByText(/1 cas assigné\. Non assignés : CAS-004 est déjà planifié/)).toBeInTheDocument();
+  });
+
+  it('starts each assignment with an empty selection', async () => {
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('+ Assigner des cas'));
+    await user.click(await screen.findByLabelText('Sélectionner tous les cas'));
+    expect(screen.getByText('✅ Assigner (2)')).toBeInTheDocument();
+    await user.click(screen.getByText('Annuler'));
+    await user.click(screen.getByText('+ Assigner des cas'));
+    expect(await screen.findByText('✅ Assigner (0)')).toBeInTheDocument();
+  });
+
+  it('shows the other sprints of a shared case on its card', async () => {
+    const card = { ...mockBoard.columns['À tester'][0], other_sprints: [{ id: 's2', name: 'Sprint 0', status: 'completed', case_status: 'Échoué' }] };
+    mockTeamsApi.getSprintBoard.mockResolvedValue({ ...mockBoard, columns: { ...mockBoard.columns, 'À tester': [card] } });
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    expect(await screen.findByText('🔗 Aussi dans : Sprint 0 (Échoué)')).toBeInTheDocument();
+    expect(screen.getAllByText(/Aussi dans/)).toHaveLength(1);
+  });
+
+  it('warns about a malformed Jira ticket in the case editor', async () => {
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByRole('button', { name: 'Créer un cas dans À tester' }));
+    await user.type(screen.getByLabelText(/^Ticket Jira/), 'qa 12');
+    expect(screen.getByText(/Format inattendu : qa 12/)).toBeInTheDocument();
+    await user.clear(screen.getByLabelText(/^Ticket Jira/));
+    await user.type(screen.getByLabelText(/^Ticket Jira/), 'QA-12');
+    expect(screen.queryByText(/Format inattendu/)).not.toBeInTheDocument();
+  });
+
+  it('checks the Jira ticket of a case from its detail popup', async () => {
+    mockTeamsApi.getUseCaseDetail.mockResolvedValue({ assignment: mockBoard.columns['À tester'][0], use_case: { id: 'uc1', is_automated: false }, screenshots: [], comments: [] });
+    mockTeamsApi.validateJiraTickets.mockResolvedValue({ jira_checked: true, error: '', results: [{ ticket: 'QA-001', valid_format: true, exists: false, summary: '' }] });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByText('CAS-001'));
+    await user.click(await screen.findByRole('button', { name: 'Vérifier' }));
+    expect(await screen.findByText(/introuvable dans Jira/)).toBeInTheDocument();
+    expect(mockTeamsApi.validateJiraTickets).toHaveBeenCalledWith('qa-team', 'qa-project', ['QA-001']);
   });
 
   it('lets a simple member change a status but not manage cases', async () => {
