@@ -8,7 +8,7 @@ import type {
   WeeklyReport, ActivityLog, UseCaseComment, MemberProgress,
   UseCaseDetail, UseCaseScreenshot, AssignableMember, DefectComment, DefectHistoryEntry,
   Regression, ProjectPerformance, Evolution, TeamPerformanceRow,
-  QaSettings, CarryOverCase, CarryOverPayload, TestImportResult, JiraValidation, SprintImportPreview, SprintImportResult,
+  QaSettings, CarryOverCase, CarryOverPayload, TestImportResult, JiraValidation, SprintImportPreview, SprintImportResult, Portfolio,
 } from '../types';
 
 /** Paramètre `sprints` de l'API : liste d'identifiants séparés par des virgules. */
@@ -206,6 +206,16 @@ export const teamsApi = {
 
   getTeamPerformance: (teamSlug: string) =>
     client.get<PaginatedResponse<TeamPerformanceRow>>(`/teams/${teamSlug}/performance/`).then(r => r.data),
+
+  /** Aperçu du rapport global (niveau de performance de chaque projet choisi et de l'ensemble). */
+  getPortfolio: (teamSlug: string, projectIds: string[]) =>
+    client.get<Portfolio>(`/teams/${teamSlug}/portfolio/`, { params: { projects: projectIds.join(',') } }).then(r => r.data),
+
+  /** Rapport PDF global des projets choisis. */
+  downloadPortfolioReport: (teamSlug: string, projectIds: string[]) =>
+    client.get(`/teams/${teamSlug}/portfolio/pdf/`, {
+      params: { projects: projectIds.join(',') }, responseType: 'blob', timeout: 180_000,
+    }).then(r => downloadBlob(r.data, filenameFromDisposition(r.headers['content-disposition']) ?? `rapport-global-${teamSlug}.pdf`)),
 
   /** Rapport PDF du projet entier (sans sprint), d'un sprint ou de plusieurs sprints. */
   downloadProjectReport: (teamSlug: string, projectSlug: string, sprintIds?: string[]) =>

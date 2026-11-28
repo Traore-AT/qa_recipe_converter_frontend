@@ -127,7 +127,7 @@ export default function TeamDashboardPage() {
             {user?.id === team.owner.id && <Button variant="secondary" onClick={() => { setMemberForm(f => ({ ...f, team_slugs: [slug!] })); setMemberModalOpen(true); }} size="sm" className="flex-1 sm:flex-none">＋ Créer un membre</Button>}
             {canManageTeam && <Button variant="secondary" onClick={() => setInviteModalOpen(true)} size="sm" className="flex-1 sm:flex-none">✉️ Inviter</Button>}
             <Button variant="secondary" onClick={() => navigate(`/teams/${slug}/activity`)} size="sm" className="flex-1 sm:flex-none">🕘 Activité</Button>
-            <Button variant="secondary" onClick={() => navigate(`/teams/${slug}/weekly-reports`)} size="sm" className="flex-1 sm:flex-none">📝 Rapports</Button>
+            <Button variant="secondary" onClick={() => navigate(`/teams/${slug}/reports`)} size="sm" className="flex-1 sm:flex-none">📊 Rapports</Button>
           </div>
         </div>
       </div>

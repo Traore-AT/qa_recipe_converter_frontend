@@ -64,6 +64,7 @@ export const queryKeys = {
   evolution: (teamSlug?: string, projectSlug?: string, sprintIds?: string[]) =>
     ['evolution', teamSlug, projectSlug, ...(sprintIds ?? [])] as const,
   teamPerformance: (teamSlug?: string) => ['team-performance', teamSlug] as const,
+  portfolio: (teamSlug?: string, projectIds?: string[]) => ['portfolio', teamSlug, ...(projectIds ?? [])] as const,
   memberProgress: (teamSlug?: string, projectSlug?: string) =>
     ['member-progress', teamSlug, projectSlug] as const,
   weeklyReports: (teamSlug?: string) => ['weekly-reports', teamSlug] as const,

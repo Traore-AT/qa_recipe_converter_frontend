@@ -8,7 +8,7 @@ import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
 
 /** Mini-courbe du taux de réussite (0–100 %) : trait discret, dernier point mis en avant. */
-function Sparkline({ row }: { row: TeamPerformanceRow }) {
+export function Sparkline({ row }: { row: TeamPerformanceRow }) {
   const values = row.evolution.map(p => p.success_rate);
   const series = values.length > 1 ? values : [...values, ...values];
   const coords = series.map((v, i, all) => [(i / (all.length - 1)) * 112 + 4, 28 - (v / 100) * 24] as const);
