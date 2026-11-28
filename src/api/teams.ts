@@ -8,7 +8,7 @@ import type {
   WeeklyReport, ActivityLog, UseCaseComment, MemberProgress,
   UseCaseDetail, UseCaseScreenshot, AssignableMember, DefectComment, DefectHistoryEntry,
   Regression, ProjectPerformance, Evolution, TeamPerformanceRow,
-  QaSettings, CarryOverCase, CarryOverPayload, TestImportResult,
+  QaSettings, CarryOverCase, CarryOverPayload, TestImportResult, JiraValidation,
 } from '../types';
 
 /** Paramètre `sprints` de l'API : liste d'identifiants séparés par des virgules. */
@@ -117,8 +117,9 @@ export const teamsApi = {
   listAssignments: (teamSlug: string, projectSlug: string, params?: { sprint?: string; user_id?: number }) =>
     client.get<PaginatedResponse<UseCaseAssignment>>(`/teams/${teamSlug}/projects/${projectSlug}/assignments/`, { params }).then(r => r.data),
 
-  createAssignments: (teamSlug: string, projectSlug: string, data: { use_case_ids: string[]; sprint_id?: string | null; user_id: number }) =>
-    client.post(`/teams/${teamSlug}/projects/${projectSlug}/assignments/`, data).then(r => r.data),
+  /** Assigne à un membre (`user_id`) ou répartit équitablement entre plusieurs (`user_ids`). */
+  createAssignments: (teamSlug: string, projectSlug: string, data: { use_case_ids: string[]; sprint_id?: string | null; user_id?: number; user_ids?: number[] }) =>
+    client.post<{ created: string[]; count: number; errors: string[]; distribution?: Array<{ user_id: number; username: string; full_name: string; count: number }> }>(`/teams/${teamSlug}/projects/${projectSlug}/assignments/`, data).then(r => r.data),
 
   deleteAssignment: (teamSlug: string, projectSlug: string, assignmentId: string) =>
     client.delete(`/teams/${teamSlug}/projects/${projectSlug}/assignments/${assignmentId}/`),
@@ -126,10 +127,15 @@ export const teamsApi = {
   updateSprintCase: (teamSlug: string, projectSlug: string, assignmentId: string, data: Partial<UseCaseAssignment> & { assigned_user_id?: number | null }) =>
     client.patch<UseCaseAssignment>(`/teams/${teamSlug}/projects/${projectSlug}/assignments/${assignmentId}/`, data).then(r => r.data),
 
+  /** Cas assignables ; avec un sprint, ceux déjà planifiés dans un autre sprint sont exclus (`hidden_other_sprints`). */
   getUnassignedUseCases: (teamSlug: string, projectSlug: string, sprintId?: string) =>
-    client.get<PaginatedResponse<{ id: string; order: number; case_number: number; ticket_number: string; use_case_text: string; description: string; status: string }>>(
+    client.get<PaginatedResponse<{ id: string; order: number; case_number: number; ticket_number: string; use_case_text: string; description: string; status: string; jira_ticket?: string }> & { hidden_other_sprints?: number }>(
       `/teams/${teamSlug}/projects/${projectSlug}/unassigned-ucs/`, { params: sprintId ? { sprint: sprintId } : undefined }
     ).then(r => r.data),
+
+  /** Format puis existence (si Jira est configuré) de références Jira. */
+  validateJiraTickets: (teamSlug: string, projectSlug: string, tickets: string[]) =>
+    client.post<JiraValidation>(`/teams/${teamSlug}/projects/${projectSlug}/jira/validate-tickets/`, { tickets }, { timeout: 60_000 }).then(r => r.data),
 
   // ── Use Case Execution ─────────────────────────────────────────────────────
   updateUseCaseStatus: (teamSlug: string, projectSlug: string, ucId: string, status: string, sprintId?: string, observedResults?: string) =>

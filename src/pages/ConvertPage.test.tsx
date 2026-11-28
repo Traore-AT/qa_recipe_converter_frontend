@@ -7,7 +7,7 @@ import { ThemeProvider } from '../context/ThemeContext';
 import ConvertPage from './ConvertPage';
 
 const { mockConversionApi, mockNavigate } = vi.hoisted(() => ({
-  mockConversionApi: { upload: vi.fn(), listJobs: vi.fn() },
+  mockConversionApi: { upload: vi.fn(), listJobs: vi.fn(), analyze: vi.fn() },
   mockNavigate: vi.fn(),
 }));
 
@@ -119,6 +119,22 @@ describe('ConvertPage', () => {
       expect(mockConversionApi.upload).toHaveBeenCalled();
       expect(mockNavigate).toHaveBeenCalledWith('/preview/new-job-id');
     });
+  });
+
+  it('previews what the import will extract as soon as a file is chosen', async () => {
+    const user = userEvent.setup();
+    mockConversionApi.analyze.mockResolvedValue({
+      total_cases: 4, fields: ['use_case_text', 'jira_ticket'], jira_column: true, with_jira: 4, invalid_jira: [], warnings: [],
+      tables: [{ index: 1, rows: 4, skipped_rows: 0, ignored: '', columns: [{ header: 'Tickets Jira', field: 'jira_ticket', label: 'Tickets Jira' }] }],
+      sample: [],
+    });
+    renderPage();
+    const fakeFile = new File(['test'], 'recette.docx');
+    await user.upload(getFileInput(), fakeFile);
+    expect(await screen.findByText('4 cas de test')).toBeInTheDocument();
+    expect(screen.getByText('Tickets Jira ✔ 4/4')).toBeInTheDocument();
+    expect(mockConversionApi.analyze).toHaveBeenCalledWith(fakeFile);
+    expect(mockConversionApi.upload).not.toHaveBeenCalled();
   });
 
   it('shows error message on upload failure', async () => {

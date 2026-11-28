@@ -9,7 +9,7 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
-import type { ExtractedUseCase } from '../types';
+import type { ExtractedUseCase, JiraValidation } from '../types';
 import excelIcon from '../assets/excel.svg';
 import csvIcon from '../assets/CSV.png';
 import cypressIcon from '../assets/cypress.svg';
@@ -17,6 +17,8 @@ import vscodeIcon from '../assets/vscode.svg';
 import { invalidateJobs, queryKeys } from '../lib/queryKeys';
 import { downloadBlob } from '../lib/download';
 import { getApiErrorMessage } from '../lib/errors';
+import { invalidJiraKeys, splitJiraKeys } from '../lib/jira';
+import { JiraCheckResult } from '../components/qa/JiraCheck';
 
 /** Statuts d'exécution d'un cas de test (tokens sémantiques). */
 const UC_STATUS_CLASSES: Record<string, string> = {
@@ -128,6 +130,22 @@ export default function PreviewPage() {
       toast.error('Enregistrement impossible', { description: getApiErrorMessage(err) });
     },
   });
+
+  // Vérification des tickets Jira saisis (y compris non encore sauvegardés).
+  const [jiraCheck, setJiraCheck] = useState<JiraValidation | null>(null);
+  const jiraCheckMutation = useMutation({
+    mutationFn: () => conversionApi.validateJira(id!, useCases.map(uc => uc.jira_ticket || '').filter(Boolean)),
+    onSuccess: setJiraCheck,
+    onError: (err) => toast.error('Vérification Jira impossible', { description: getApiErrorMessage(err) }),
+  });
+  const missingInJira = new Set(jiraCheck?.results.filter(r => r.exists === false).map(r => r.ticket));
+  const jiraIssue = (value?: string) => {
+    const invalid = invalidJiraKeys(value);
+    if (invalid.length) return `⚠ Format inattendu : ${invalid.join(', ')} (attendu : PROJET-123)`;
+    const missing = splitJiraKeys(value).filter(k => missingInJira.has(k));
+    return missing.length ? `✘ Introuvable dans Jira : ${missing.join(', ')}` : '';
+  };
+  const jiraIssuesCount = useCases.filter(uc => jiraIssue(uc.jira_ticket)).length;
 
   const vscodeMutation = useMutation({
     mutationFn: async () => {
@@ -396,9 +414,31 @@ export default function PreviewPage() {
             >
               {saveMutation.isPending ? '⏳ Sauvegarde…' : '💾 Sauvegarder'}
             </button>
+            <button
+              onClick={() => jiraCheckMutation.mutate()}
+              disabled={jiraCheckMutation.isPending || !useCases.some(uc => uc.jira_ticket)}
+              className="btn-ghost text-body-sm px-3 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all disabled:opacity-50 cursor-pointer"
+            >
+              {jiraCheckMutation.isPending ? '⏳ Vérification…' : '🔎 Vérifier les tickets Jira'}
+            </button>
             {saveIndicator && <span className="text-body-sm text-success font-semibold animate-fade-in">✅ Sauvegardé</span>}
           </div>
         </div>
+        {(jiraCheck || jiraIssuesCount > 0) && (
+          <div className="border-b border-outline-variant px-5 py-3" aria-label="Contrôle des tickets Jira">
+            <p className={`text-body-sm font-semibold ${jiraIssuesCount ? 'text-warning' : 'text-success'}`}>
+              {jiraIssuesCount
+                ? `${jiraIssuesCount} cas avec un ticket Jira à vérifier (repérés par ⚠ ou ✘ dans la colonne Jira).`
+                : 'Tous les tickets Jira sont conformes.'}
+            </p>
+            {jiraCheck && (
+              <details className="mt-1">
+                <summary className="cursor-pointer text-body-xs text-on-surface-variant">Détail de la vérification ({jiraCheck.results.length} ticket{jiraCheck.results.length > 1 ? 's' : ''})</summary>
+                <JiraCheckResult check={jiraCheck} />
+              </details>
+            )}
+          </div>
+        )}
 
           <div className="overflow-x-auto">
           <table className="w-full border-collapse text-body-sm">
@@ -453,8 +493,12 @@ export default function PreviewPage() {
                       placeholder="QA-123"
                       onBlur={e => updateUc(uc.id, 'jira_ticket', e.target.value.trim())}
                       aria-label={`Ticket Jira du cas ${uc.case_number}`}
+                      aria-invalid={!!jiraIssue(uc.jira_ticket)}
                       className="w-full rounded px-1 py-0.5 text-left outline-none focus:bg-warning-container/60 focus:ring-2 focus:ring-warning text-body-xs font-mono text-info bg-transparent placeholder:text-on-surface-variant/40"
                     />
+                    {jiraIssue(uc.jira_ticket) && (
+                      <span className="mt-0.5 block text-[0.625rem] leading-tight text-warning">{jiraIssue(uc.jira_ticket)}</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
                     <span

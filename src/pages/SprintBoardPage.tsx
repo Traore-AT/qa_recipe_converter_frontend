@@ -7,14 +7,16 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { AssignCasesModal } from '../components/qa/AssignCasesModal';
 import { CarryOverModal } from '../components/qa/CarryOverModal';
 import { ImportResultsModal } from '../components/qa/ImportResultsModal';
 import { DefectFormModal } from '../components/qa/DefectFormModal';
 import { SprintEditModal } from '../components/qa/SprintEditModal';
-import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, SprintStats } from '../types';
+import type { UseCaseDetail, UseCaseScreenshot, UseCaseAssignment, SprintStats, JiraValidation } from '../types';
 import { invalidateProjectScope, queryKeys } from '../lib/queryKeys';
 import { caseLabel, DEFECT_STATUS, SEVERITIES, SPRINT_STATUS_LABELS } from '../lib/qa';
 import { getApiErrorMessage } from '../lib/errors';
+import { JiraCheckResult, JiraFormatHint } from '../components/qa/JiraCheck';
 
 const STATUS_COLUMNS = ['À tester', 'En cours', 'Passé', 'Échoué', 'Bloqué'];
 const STATUS_COLORS: Record<string, string> = {
@@ -42,7 +44,6 @@ export default function SprintBoardPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedSprint, setSelectedSprint] = useState<string | ''>(sprintId || '');
   const [newSprint, setNewSprint] = useState({ name: '', goal: '', start_date: '', end_date: '', status: 'planned' });
-  const [assignData, setAssignData] = useState({ use_case_ids: [] as string[], user_id: 0 });
   const [detailAssignmentId, setDetailAssignmentId] = useState<string | null>(null);
   const [ucComment, setUcComment] = useState('');
   const [ticketQuery, setTicketQuery] = useState('');
@@ -85,12 +86,6 @@ export default function SprintBoardPage() {
     enabled: !!slug && !!projectSlug && canManage,
   });
 
-  const { data: unassigned } = useQuery({
-    queryKey: queryKeys.unassignedUcs(slug, projectSlug, selectedSprint),
-    queryFn: () => teamsApi.getUnassignedUseCases(slug!, projectSlug!, selectedSprint || undefined),
-    enabled: !!slug && !!projectSlug && showAssignModal,
-  });
-
   const { data: ucDetail, isLoading: ucDetailLoading } = useQuery({
     queryKey: queryKeys.ucDetail(slug, projectSlug, detailAssignmentId),
     queryFn: () => teamsApi.getUseCaseDetail(slug!, projectSlug!, detailAssignmentId!),
@@ -110,21 +105,6 @@ export default function SprintBoardPage() {
       if (sprint?.id) setSelectedSprint(sprint.id);
       setShowCreateModal(false);
       setNewSprint({ name: '', goal: '', start_date: '', end_date: '', status: 'planned' });
-    },
-  });
-
-  const assignMutation = useMutation({
-    mutationFn: () => teamsApi.createAssignments(slug!, projectSlug!, {
-      use_case_ids: assignData.use_case_ids,
-      sprint_id: selectedSprint || null,
-      user_id: assignData.user_id,
-    }),
-    onSuccess: () => {
-      refresh();
-      queryClient.invalidateQueries({ queryKey: queryKeys.assignableMembers(slug, projectSlug) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedUcs(slug, projectSlug, selectedSprint) });
-      setShowAssignModal(false);
-      setAssignData({ use_case_ids: [], user_id: 0 });
     },
   });
 
@@ -392,6 +372,12 @@ return (
                       {assignment.use_case_id_str || assignment.use_case_desc}
                     </p>
                     {assignment.carried_from_name && <p className="mb-2 truncate text-body-xs text-on-surface-variant" title={`Reporté de ${assignment.carried_from_name}`}>↪ {assignment.carried_from_name}</p>}
+                    {!!assignment.other_sprints?.length && (
+                      <p className="mb-2 truncate rounded bg-info-container/50 px-1.5 py-0.5 text-body-xs text-on-info-container"
+                         title={assignment.other_sprints.map(o => `${o.name} : ${o.case_status}`).join(' · ')}>
+                        🔗 Aussi dans : {assignment.other_sprints.map(o => `${o.name} (${o.case_status})`).join(', ')}
+                      </p>
+                    )}
                     {(assignment.is_regression || !!assignment.open_defects_count) && (
                       <div className="mb-2.5 flex flex-wrap gap-1.5">
                         {assignment.is_regression && <Badge variant="warning">↩ Régression</Badge>}
@@ -522,59 +508,23 @@ return (
         </div>
       </Modal>
 
-      <Modal
-        open={showAssignModal}
-        onClose={() => setShowAssignModal(false)}
-        labelledBy="assign-modal-title"
-        maxWidth="max-w-lg"
-        className="p-4 sm:p-7"
-      >
-        <h3 id="assign-modal-title" className="text-headline-sm font-bold text-on-surface mb-5">+ Assigner des cas à un membre</h3>
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="assign-member" className="text-label-md text-on-surface-variant block mb-1">Membre</label>
-            <select id="assign-member" value={assignData.user_id} onChange={e => setAssignData(p => ({ ...p, user_id: Number(e.target.value) }))}
-                    className="w-full border border-outline-variant rounded-lg bg-surface px-3 py-2.5 outline-none focus:border-primary">
-              <option value={0}>Sélectionner…</option>
-              {memberOptions}
-            </select>
-            <p className="mt-1 text-body-xs text-on-surface-variant">Tous les membres de l’équipe sont proposés ; ceux marqués « (équipe) » rejoindront automatiquement le projet.</p>
-          </div>
-          <div>
-            <label className="text-label-md text-on-surface-variant block mb-1">Cas non assignés ({unassigned?.results?.length || 0})</label>
-            <div className="max-h-60 overflow-y-auto border border-outline-variant rounded-lg p-2 space-y-1">
-              {!!unassigned?.results?.length && <label className="flex items-center gap-2 p-1.5 border-b border-outline-variant font-semibold"><input type="checkbox" checked={assignData.use_case_ids.length === unassigned.results.length} onChange={e => setAssignData(p => ({ ...p, use_case_ids: e.target.checked ? unassigned.results.map(uc => uc.id) : [] }))} />Sélectionner tous les cas</label>}
-              {unassigned?.results?.map((uc) => (
-                <label key={uc.id} className="flex items-center gap-2 p-1.5 hover:bg-surface-container-low rounded cursor-pointer">
-                  <input type="checkbox" checked={assignData.use_case_ids.includes(uc.id)}
-                         onChange={e => {
-                           if (e.target.checked) setAssignData(p => ({ ...p, use_case_ids: [...p.use_case_ids, uc.id] }));
-                           else setAssignData(p => ({ ...p, use_case_ids: p.use_case_ids.filter(id => id !== uc.id) }));
-                         }} />
-                  <span className="text-body-sm text-on-surface">CAS-{String(uc.case_number).padStart(3, '0')}</span>
-                  <span className="text-body-sm text-on-surface-variant truncate">{uc.use_case_text || uc.description}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-        {assignMutation.isError && <p role="alert" className="text-error mt-3">{getApiErrorMessage(assignMutation.error, 'Assignation impossible.')}</p>}
-        <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end mt-6 [&>button]:w-full sm:[&>button]:w-auto">
-          <Button variant="secondary" onClick={() => setShowAssignModal(false)}>
-            Annuler
-          </Button>
-          <Button onClick={() => assignMutation.mutate()} disabled={!canManage || !assignData.user_id || assignData.use_case_ids.length === 0 || assignMutation.isPending}>
-            {assignMutation.isPending ? '⏳…' : `✅ Assigner (${assignData.use_case_ids.length})`}
-          </Button>
-        </div>
-      </Modal>
+      {showAssignModal && selectedSprint && (
+        <AssignCasesModal
+          teamSlug={slug!}
+          projectSlug={projectSlug!}
+          sprintId={selectedSprint}
+          members={members?.results ?? []}
+          onClose={() => setShowAssignModal(false)}
+          onDone={message => { setShowAssignModal(false); setNotice(message); }}
+        />
+      )}
 
       <Modal open={!!ticketEditor} onClose={() => setTicketEditor(null)} labelledBy="ticket-editor-title" maxWidth="max-w-2xl" className="p-4 sm:p-7">
         <h3 id="ticket-editor-title" className="text-headline-sm font-bold text-on-surface mb-4">Créer un cas commun</h3>
         {ticketEditor && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto pr-1">
           <p className="text-label-md md:col-span-2 text-primary font-mono">Le numéro CAS sera attribué automatiquement et sera identique dans la recette et les sprints.</p>
           <label className="text-label-md md:col-span-2">Use Case (titre) *<input value={ticketEditor.use_case_text} onChange={e => setTicketEditor(t => t && ({ ...t, use_case_text: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
-          <label className="text-label-md">Ticket Jira<input value={ticketEditor.jira_ticket ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, jira_ticket: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md">Ticket Jira<input value={ticketEditor.jira_ticket ?? ''} placeholder="Ex : QA-123" onChange={e => setTicketEditor(t => t && ({ ...t, jira_ticket: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /><JiraFormatHint value={ticketEditor.jira_ticket} /></label>
           <label className="text-label-md md:col-span-2">Description<textarea value={ticketEditor.description ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, description: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md md:col-span-2">Préconditions<textarea value={ticketEditor.preconditions ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, preconditions: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md md:col-span-2">Étapes<textarea value={ticketEditor.steps ?? ''} onChange={e => setTicketEditor(t => t && ({ ...t, steps: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
@@ -593,7 +543,7 @@ return (
         {assignmentEditor && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto pr-1">
           <p className="text-label-md md:col-span-2 text-primary font-mono">CAS-{String(assignmentEditor.case_number).padStart(3, '0')}</p>
           <label className="text-label-md md:col-span-2">Use Case (titre)<input value={assignmentEditor.use_case_text || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, use_case_text: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
-          <label className="text-label-md">Ticket Jira<input value={assignmentEditor.jira_ticket || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, jira_ticket: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
+          <label className="text-label-md">Ticket Jira<input value={assignmentEditor.jira_ticket || ''} placeholder="Ex : QA-123" onChange={e => setAssignmentEditor(a => a && ({ ...a, jira_ticket: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface" /><JiraFormatHint value={assignmentEditor.jira_ticket} /></label>
           <label className="text-label-md">Statut<select value={assignmentEditor.status} onChange={e => setAssignmentEditor(a => a && ({ ...a, status: e.target.value }))} className="mt-1 w-full border rounded-lg p-2 bg-surface">{STATUS_COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}</select></label>
           <label className="text-label-md md:col-span-2">Description<textarea value={assignmentEditor.description || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, description: e.target.value }))} rows={3} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
           <label className="text-label-md md:col-span-2">Préconditions<textarea value={assignmentEditor.preconditions || ''} onChange={e => setAssignmentEditor(a => a && ({ ...a, preconditions: e.target.value }))} rows={2} className="mt-1 w-full border rounded-lg p-2 bg-surface" /></label>
@@ -625,6 +575,7 @@ return (
             jiraTicketMutation.mutate({ useCaseId: selectedAssignment.use_case, jiraTicket: value })
           }
           isSavingJira={jiraTicketMutation.isPending}
+          onCheckJira={(value) => teamsApi.validateJiraTickets(slug!, projectSlug!, [value])}
           ucComment={ucComment}
           onCommentChange={setUcComment}
           isUploading={uploadScreenshotMutation.isPending}
@@ -670,7 +621,7 @@ return (
 
 function UseCaseDetailModal({
   assignment, detail, isLoading,
-  onClose, onUploadScreenshot, onDeleteScreenshot, onAddComment, onSaveJira, isSavingJira,
+  onClose, onUploadScreenshot, onDeleteScreenshot, onAddComment, onSaveJira, isSavingJira, onCheckJira,
   ucComment, onCommentChange, isUploading, fileInputRef, canWrite, onReportDefect,
 }: {
   assignment: UseCaseAssignment;
@@ -682,6 +633,7 @@ function UseCaseDetailModal({
   onAddComment: (content: string) => void;
   onSaveJira: (value: string) => void;
   isSavingJira: boolean;
+  onCheckJira: (value: string) => Promise<JiraValidation>;
   ucComment: string;
   onCommentChange: (v: string) => void;
   isUploading: boolean;
@@ -691,6 +643,21 @@ function UseCaseDetailModal({
 }) {
   const [screenshotCaption, setScreenshotCaption] = useState('');
   const [jiraValue, setJiraValue] = useState(assignment.jira_ticket || '');
+  const [jiraCheck, setJiraCheck] = useState<JiraValidation | null>(null);
+  const [jiraCheckError, setJiraCheckError] = useState('');
+  const [checkingJira, setCheckingJira] = useState(false);
+
+  const checkJira = async () => {
+    setCheckingJira(true);
+    setJiraCheckError('');
+    try {
+      setJiraCheck(await onCheckJira(jiraValue));
+    } catch (error: unknown) {
+      setJiraCheckError(getApiErrorMessage(error, 'Vérification Jira impossible.'));
+    } finally {
+      setCheckingJira(false);
+    }
+  };
 
   const handleJiraBlur = () => {
     const trimmed = jiraValue.trim();
@@ -758,7 +725,11 @@ function UseCaseDetailModal({
                 className="flex-1 text-body-base text-on-surface bg-surface-container-low rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/40 border border-outline-variant"
               />
               {isSavingJira && <span className="text-body-xs text-on-surface-variant animate-pulse">⏳ Enregistrement…</span>}
+              <Button size="sm" variant="secondary" onClick={checkJira} loading={checkingJira} disabled={!jiraValue.trim()}>Vérifier</Button>
             </div>
+            <JiraFormatHint value={jiraValue} />
+            {jiraCheckError && <p role="alert" className="mt-1 text-body-xs text-error">{jiraCheckError}</p>}
+            {jiraCheck && <JiraCheckResult check={jiraCheck} />}
           </div>
 
           <div>

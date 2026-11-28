@@ -266,6 +266,47 @@ export interface UseCaseAssignment {
   open_defects_count?: number;
   carried_from_name?: string | null;
   is_regression?: boolean;
+  /** Autres sprints contenant ce cas, avec son résultat dans chacun. */
+  other_sprints?: OtherSprint[];
+}
+
+export interface OtherSprint {
+  id: string;
+  name: string;
+  status: Sprint['status'];
+  case_status: string;
+}
+
+/** Vérification d'une référence Jira (format PROJET-123, existence si Jira est configuré). */
+export interface JiraTicketCheck {
+  ticket: string;
+  valid_format: boolean;
+  exists: boolean | null;
+  summary: string;
+}
+
+export interface JiraValidation {
+  jira_checked: boolean;
+  error: string;
+  results: JiraTicketCheck[];
+}
+
+/** Aperçu d'import d'un document Word (rien n'est enregistré). */
+export interface ImportAnalysis {
+  tables: Array<{
+    index: number;
+    columns: Array<{ header: string; field: string | null; label: string | null }>;
+    rows: number;
+    skipped_rows: number;
+    ignored: string;
+  }>;
+  total_cases: number;
+  fields: string[];
+  jira_column: boolean;
+  with_jira: number;
+  invalid_jira: Array<{ row: number; ticket: string }>;
+  warnings: string[];
+  sample: Array<Record<'use_case_text' | 'description' | 'preconditions' | 'steps' | 'expected_results' | 'observed_results' | 'jira_ticket', string>>;
 }
 
 /** Membre de l'équipe pouvant recevoir des cas de test. */
