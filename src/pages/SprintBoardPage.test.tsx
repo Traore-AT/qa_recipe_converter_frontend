@@ -33,6 +33,8 @@ const { mockTeamsApi, mockNavigate } = vi.hoisted(() => ({
     deleteAssignment: vi.fn(),
     createUseCaseComment: vi.fn(),
     validateJiraTickets: vi.fn(),
+    previewSprintImport: vi.fn(),
+    importSprintCases: vi.fn(),
   },
   mockNavigate: vi.fn(),
 }));
@@ -336,6 +338,39 @@ describe('SprintBoardPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Vérifier' }));
     expect(await screen.findByText(/introuvable dans Jira/)).toBeInTheDocument();
     expect(mockTeamsApi.validateJiraTickets).toHaveBeenCalledWith('qa-team', 'qa-project', ['QA-001']);
+  });
+
+  it('imports cases into the sprint from the Kanban and highlights them', async () => {
+    mockTeamsApi.previewSprintImport.mockResolvedValue({
+      total_cases: 1, fields: ['use_case_text'], jira_column: false, with_jira: 0, invalid_jira: [], warnings: [],
+      tables: [], sample: [], rows: [{ row: 1, title: 'Nouveau', jira_ticket: '', duplicate_of: null, duplicate_row: null }],
+      new_cases: 1, duplicates: 0, sprint: { id: 's1', name: 'Sprint 1' },
+    });
+    mockTeamsApi.importSprintCases.mockResolvedValue({ imported: 1, skipped: [], job_id: 'j1', assignment_ids: ['a1'], case_numbers: [1], distribution: [] });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    await user.click(await screen.findByRole('button', { name: '📥 Importer des cas' }));
+    expect(screen.getByRole('dialog', { name: /Importer des cas dans « Sprint 1 »/ })).toBeInTheDocument();
+    await user.upload(document.getElementById('sprint-import-file') as HTMLInputElement, new File(['x'], 'r.docx'));
+    await user.click(await screen.findByText('Continuer →'));
+    await user.click(screen.getByText('✅ Importer 1 cas'));
+    expect(await screen.findByText('1 cas importé dans « Sprint 1 ».')).toBeInTheDocument();
+    expect(mockTeamsApi.importSprintCases).toHaveBeenCalledWith('qa-team', 'qa-project', 's1', expect.any(File), []);
+    await waitFor(() => expect(document.querySelector('[data-highlighted]')).not.toBeNull());
+  });
+
+  it('invites to import cases when the sprint is empty', async () => {
+    mockTeamsApi.getSprintBoard.mockResolvedValue({ ...mockBoard, columns: { 'À tester': [], 'En cours': [], 'Passé': [], 'Échoué': [], 'Bloqué': [] } });
+    const user = userEvent.setup();
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s1');
+    expect(await screen.findByText('Ce sprint ne contient encore aucun cas de test.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '📥 Importer un document' }));
+    expect(screen.getByRole('dialog', { name: /Importer des cas/ })).toBeInTheDocument();
+  });
+
+  it('does not offer the import on a completed sprint', async () => {
+    renderPage('/teams/qa-team/projects/qa-project/sprints/s2');
+    expect(await screen.findByRole('button', { name: '📥 Importer des cas' })).toBeDisabled();
   });
 
   it('lets a simple member change a status but not manage cases', async () => {

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { conversionApi } from '../../api/conversion';
 import { getApiErrorMessage } from '../../lib/errors';
+import type { ImportAnalysis } from '../../types';
 
 const FIELD_LABELS: Record<string, string> = {
   use_case_text: 'Use Case', description: 'Description', preconditions: 'Préconditions', steps: 'Étapes',
@@ -31,8 +32,13 @@ export function ImportAnalysisPanel({ file }: { file: File }) {
     );
   }
 
+  return <ImportAnalysisSummary data={data} className="mt-4" />;
+}
+
+/** Détail d'une analyse d'import (réutilisé par l'import de cas dans un sprint). */
+export function ImportAnalysisSummary({ data, className = '' }: { data: ImportAnalysis; className?: string }) {
   return (
-    <section aria-label="Aperçu de l'import" className="mt-4 space-y-3 text-left">
+    <section aria-label="Aperçu de l'import" className={`space-y-3 text-left ${className}`}>
       <div className="flex flex-wrap gap-2 text-body-sm">
         <span className="rounded-full bg-primary-fixed px-3 py-1 font-semibold text-primary">{data.total_cases} cas de test</span>
         <span className={`rounded-full px-3 py-1 font-semibold ${data.jira_column ? 'bg-success-container text-on-success-container' : 'bg-warning-container text-on-warning-container'}`}>
