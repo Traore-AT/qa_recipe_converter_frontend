@@ -7,17 +7,21 @@ import type { TeamPerformanceRow } from '../../types';
 import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
 
-/** Mini-courbe du taux de réussite (0–100 %), tracée en SVG pour rester légère. */
+/** Mini-courbe du taux de réussite (0–100 %) : trait discret, dernier point mis en avant. */
 function Sparkline({ row }: { row: TeamPerformanceRow }) {
   const values = row.evolution.map(p => p.success_rate);
-  const points = (values.length > 1 ? values : [...values, ...values])
-    .map((v, i, all) => `${((i / (all.length - 1)) * 116 + 2).toFixed(1)},${(30 - (v / 100) * 28).toFixed(1)}`)
-    .join(' ');
+  const series = values.length > 1 ? values : [...values, ...values];
+  const coords = series.map((v, i, all) => [(i / (all.length - 1)) * 112 + 4, 28 - (v / 100) * 24] as const);
+  const [lx, ly] = coords.at(-1) ?? [116, 28];
+  const first = values[0] ?? 0;
   const last = values.at(-1) ?? 0;
   return (
-    <svg viewBox="0 0 120 32" className="h-8 w-28" role="img" aria-label={`Évolution du taux de réussite de ${row.project.name} : ${last} %`}>
-      <title>{`${values[0] ?? 0} % → ${last} %`}</title>
-      <polyline points={points} fill="none" stroke="#059669" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+    <svg viewBox="0 0 120 32" className="h-8 w-28" role="img"
+         aria-label={`Évolution du taux de réussite de ${row.project.name} : ${last} % (départ : ${first} %)`}>
+      <title>{`${first} % → ${last} %`}</title>
+      <polyline points={coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')} fill="none"
+                stroke="var(--chart-ink-muted)" strokeOpacity={0.6} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={lx} cy={ly} r={3.5} fill="var(--chart-1)" stroke="var(--chart-surface)" strokeWidth={1.5} />
     </svg>
   );
 }

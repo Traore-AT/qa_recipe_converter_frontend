@@ -86,6 +86,37 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
+/*
+ * Graphiques : palette validée (scripts/validate_palette.js — CVD, contraste, bandes de luminosité)
+ * contre les surfaces des cartes (#ffffff / #0b1220). Séries dans un ordre fixe, statuts réservés.
+ */
+:root {
+  --chart-surface: #ffffff;
+  --chart-ink: #1e293b;
+  --chart-ink-muted: #64748b;
+  --chart-grid: #e7e7e7;
+  --chart-axis: #c2c2c2;
+  --chart-1: #257de0;
+  --chart-2: #f47230;
+  --chart-3: #00b894;
+  --status-good: #0aac23;
+  --status-warning: #fbb315;
+  --status-critical: #dc3c3d;
+  --status-neutral: #94a3b8;
+}
+
+html.dark {
+  --chart-surface: #0b1220;
+  --chart-ink: #f1f5f9;
+  --chart-ink-muted: #94a3b8;
+  --chart-grid: #1f2a3c;
+  --chart-axis: #3a475c;
+  --chart-1: #338ced;
+  --chart-2: #e76624;
+  --chart-3: #00a888;
+  --status-neutral: #64748b;
+}
+
 html.dark {
   color-scheme: dark;
   --color-surface: #0f172a;

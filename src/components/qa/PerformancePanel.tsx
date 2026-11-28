@@ -10,7 +10,21 @@ import { Card } from '../ui/Card';
 import { ErrorState } from '../ui/ErrorState';
 import { Skeleton } from '../ui/Skeleton';
 import { EvolutionChart } from './EvolutionChart';
+import { SprintComparisonChart } from '../charts/SprintComparisonChart';
+import { StatusBreakdown } from '../charts/StatusBreakdown';
+import { formatPercent } from '../../lib/chart';
 import { SprintPicker } from './SprintPicker';
+
+/** Jauge 0–100 % : la couleur porte le niveau (≥ 70 bon, ≥ 50 à surveiller, sinon critique). */
+function Meter({ value, label }: { value: number; label: string }) {
+  const color = value >= 70 ? 'var(--chart-1)' : value >= 50 ? 'var(--status-warning)' : 'var(--status-critical)';
+  return (
+    <div role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}
+         className="mt-1 h-2 overflow-hidden rounded-full" style={{ backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)` }}>
+      <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.min(100, Math.max(0, value))}%`, backgroundColor: color }} />
+    </div>
+  );
+}
 
 function Kpi({ label, value }: { label: string; value: string | number }) {
   return (
@@ -60,16 +74,18 @@ export function PerformancePanel({ teamSlug, projectSlug, sprints }: { teamSlug:
                   <li key={key}>
                     <div className="flex justify-between text-body-sm text-on-surface">
                       <span>{COMPONENT_LABELS[key].label} <span className="text-on-surface-variant">({perf.weights[key]} %)</span></span>
-                      <strong>{perf.components[key]} %</strong>
+                      <strong className="tabular-nums">{formatPercent(perf.components[key])}</strong>
                     </div>
-                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-container-low">
-                      <div className="h-full rounded-full bg-primary" style={{ width: `${perf.components[key]}%` }} />
-                    </div>
+                    <Meter value={perf.components[key]} label={COMPONENT_LABELS[key].label} />
                     <p className="mt-0.5 text-body-xs text-on-surface-variant">{COMPONENT_LABELS[key].hint}</p>
                   </li>
                 ))}
               </ul>
             </div>
+          </Card>
+
+          <Card>
+            <StatusBreakdown stats={perf.stats} />
           </Card>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
@@ -98,6 +114,7 @@ export function PerformancePanel({ teamSlug, projectSlug, sprints }: { teamSlug:
 
           <Card>
             <h2 className="mb-3 text-headline-sm font-bold text-on-surface">Comparaison des sprints</h2>
+            <div className="mb-6"><SprintComparisonChart sprints={perf.sprints} /></div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left text-body-sm text-on-surface">
                 <thead className="text-on-surface-variant">

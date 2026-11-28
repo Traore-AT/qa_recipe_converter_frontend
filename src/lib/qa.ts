@@ -82,11 +82,12 @@ export interface ChartSeries {
 }
 
 /** Séries validées (contraste et daltonisme) — un seul axe par graphique. */
+// Couleurs de séries dans l'ordre fixe de la palette (jetons --chart-1, --chart-2 ; voir lib/chart.ts).
 export const RATE_SERIES: ChartSeries[] = [
-  { key: 'success_rate', label: 'Taux de réussite', color: '#059669' },
-  { key: 'execution_rate', label: 'Avancement', color: '#2563eb' },
+  { key: 'success_rate', label: 'Taux de réussite', color: 'var(--chart-1)' },
+  { key: 'execution_rate', label: 'Avancement', color: 'var(--chart-2)' },
 ];
 export const DEFECT_SERIES: ChartSeries[] = [
-  { key: 'defects_open', label: 'Anomalies actives', color: '#dc2626' },
-  { key: 'defects_resolved', label: 'Anomalies résolues (cumul)', color: '#0284c7' },
+  { key: 'defects_open', label: 'Anomalies actives', color: 'var(--chart-1)' },
+  { key: 'defects_resolved', label: 'Anomalies résolues (cumul)', color: 'var(--chart-2)' },
 ];
