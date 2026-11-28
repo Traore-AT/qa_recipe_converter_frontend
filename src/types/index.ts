@@ -540,6 +540,13 @@ export interface Evolution {
   points: EvolutionPoint[];
 }
 
+/** Aperçu du rapport global : niveau de chaque projet choisi et de l'ensemble. */
+export interface Portfolio {
+  team: { name: string; slug: string };
+  performance: Performance;
+  projects: Array<{ id: string; name: string; slug: string; status: string; status_label: string; sprints: number; performance: Performance }>;
+}
+
 export interface TeamPerformanceRow {
   project: Pick<Project, 'id' | 'name' | 'slug' | 'color' | 'status'>;
   performance: Performance;

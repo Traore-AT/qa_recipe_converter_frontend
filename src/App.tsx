@@ -33,6 +33,7 @@ const InvitationPage = lazy(() => import('./pages/InvitationPage'));
 const SprintBoardPage = lazy(() => import('./pages/SprintBoardPage'));
 const DefectTrackerPage = lazy(() => import('./pages/DefectTrackerPage'));
 const WeeklyReportPage = lazy(() => import('./pages/WeeklyReportPage'));
+const TeamReportsPage = lazy(() => import('./pages/TeamReportsPage'));
 const MemberProgressPage = lazy(() => import('./pages/MemberProgressPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const ActivityPage = lazy(() => import('./pages/ActivityPage'));
@@ -118,6 +119,7 @@ function AppRoutes() {
           <Route path="/teams/:slug/projects/:projectSlug/defects" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><DefectTrackerPage /></Suspense></ProtectedRoute>} />
           <Route path="/teams/:slug/projects/:projectSlug/member-progress" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><MemberProgressPage /></Suspense></ProtectedRoute>} />
           <Route path="/teams/:slug/weekly-reports" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><WeeklyReportPage /></Suspense></ProtectedRoute>} />
+          <Route path="/teams/:slug/reports" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><TeamReportsPage /></Suspense></ProtectedRoute>} />
           <Route path="/teams" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/teams/new" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><TeamCreatePage /></Suspense></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Suspense fallback={<RouteFallback />}><SettingsPage /></Suspense></ProtectedRoute>} />
